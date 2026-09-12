@@ -31,11 +31,27 @@ button { cursor: pointer; }
 .header-actions { margin-left: auto; display: flex; align-items: center; gap: 21px; }
 .archive-header-actions { display: flex; align-items: center; gap: 8px; }
 .import-button { border: 1px solid #d5ddd5; background: #f6faf5; color: #55705b; padding: 10px 12px; border-radius: 5px; font-weight: 600; font-size: 13px; letter-spacing: .04em; }
+.tutorial-button { border: 1px solid #ded6c9; background: #fffaf2; color: #98724d; padding: 10px 12px; border-radius: 5px; font-weight: 600; font-size: 13px; letter-spacing: .04em; }
+.tutorial-backdrop { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 24px; background: rgba(37, 41, 35, .28); backdrop-filter: blur(3px); }
+.tutorial-backdrop[hidden] { display: none !important; }
+.tutorial-card { position: relative; width: min(560px, 100%); padding: 32px 34px 28px; border: 1px solid #dfd6c9; border-radius: 10px; background: #fffefa; box-shadow: 0 20px 60px rgba(44, 40, 30, .18); }
+.tutorial-close { position: absolute; top: 12px; right: 15px; border: 0; background: transparent; color: #99958b; font-size: 25px; line-height: 1; }
+.tutorial-kicker { color: var(--orange); font: 10px 'DM Mono', monospace; letter-spacing: .15em; }
+.tutorial-card h2 { margin: 10px 0 8px; color: var(--green); font-size: 28px; letter-spacing: .06em; }
+.tutorial-lead { margin: 0 0 22px; color: #777b75; font-size: 13px; line-height: 1.8; }
+.tutorial-steps { display: grid; gap: 12px; }
+.tutorial-steps > div { display: grid; grid-template-columns: 34px 110px 1fr; gap: 10px; align-items: baseline; padding: 12px 0; border-top: 1px solid #ebe6dd; }
+.tutorial-steps b { color: var(--orange); font: 12px 'DM Mono', monospace; }
+.tutorial-steps strong { color: #41453e; font-size: 14px; }
+.tutorial-steps span { color: #8c8e87; font-size: 12px; line-height: 1.7; }
+.tutorial-detail { margin-left: 7px; padding: 0; border: 0; border-bottom: 1px solid #c99972; background: transparent; color: var(--orange); font-size: 11px; }
+.tutorial-detail-panel { margin-top: 15px; padding: 12px 13px; border-left: 2px solid #d28b61; background: #fbf4ea; color: #806d5b; font-size: 11px; line-height: 1.8; }
+.tutorial-note { margin-top: 20px; padding: 11px 13px; border-radius: 4px; background: #f8f2e8; color: #927b62; font-size: 11px; line-height: 1.7; }
 .icon-button { border: 0; background: transparent; color: #6d716b; font-size: 20px; padding: 5px; }
 .export-button { border: 1px solid #e8c7b5; background: #fdf9f3; color: #a6582b; padding: 10px 16px; border-radius: 5px; font-weight: 600; font-size: 13px; letter-spacing: .04em; }
 .export-button span { margin-left: 13px; color: #cc8c67; }
 
-.page { max-width: 1080px; margin: 0 auto; padding: 60px 36px 78px; }
+.page { max-width: 1080px; margin: 0 auto; padding: 32px 36px 78px; }
 .hero { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 40px; }
 h1 { margin: 0 0 12px; color: var(--green); font-size: clamp(30px, 3.2vw, 43px); letter-spacing: .045em; font-weight: 700; line-height: 1.25; }
 .hero p { color: #777b75; margin: 0; font-size: 14px; letter-spacing: .075em; }
@@ -97,6 +113,12 @@ h1 { margin: 0 0 12px; color: var(--green); font-size: clamp(30px, 3.2vw, 43px);
 .empty-board { color: #a5a79f; place-self: center; font-size: 14px; }
 .notation-footer { display: flex; justify-content: space-between; color: #aaa9a0; font-size: 11px; padding-top: 17px; }
 .score-preview { margin-top: 19px; border-top: 1px solid #e3e2d9; padding-top: 17px; }
+.score-module-title { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; color: var(--green); }
+.score-module-title span { color: var(--orange); font: 11px 'DM Mono', monospace; }
+.score-module-title strong { font-size: 16px; letter-spacing: .08em; }
+.score-module-title small { color: #9b9d96; font-size: 11px; }
+.score-module-heading { display: flex; align-items: baseline; gap: 10px; }
+.score-empty-module { min-height: 100px; display: grid; place-items: center; border: 1px dashed #deded5; border-radius: 4px; color: #aaa9a0; font-size: 13px; background: #fffefa; }
 .score-heading { display: flex; align-items: baseline; gap: 13px; color: #89918a; font-size: 11px; }
 .score-heading > div { display: flex; align-items: baseline; gap: 13px; }
 .score-view-actions { margin-left: auto; display: flex; gap: 6px; }
@@ -111,12 +133,15 @@ h1 { margin: 0 0 12px; color: var(--green); font-size: clamp(30px, 3.2vw, 43px);
 .score-beat { min-height: 52px; display: flex; flex: 0 0 auto; flex-direction: row; align-items: center; justify-content: flex-start; gap: 0; border-right: 0; padding: 8px 0; }
 .score-beat:last-child { border-right: 0; }
 .score-char-group { position: relative; display: inline-flex; flex-direction: row; align-items: center; gap: 0; padding-top: 5px; }
-.score-note { width: 18px; min-width: 18px; max-width: 18px; flex: 0 0 18px; display: inline-grid; grid-template-rows: 7px 22px 7px 7px 9px 17px; align-items: center; justify-items: center; text-align: center; line-height: 1.1; overflow: visible; }
+.score-four-group { position: relative; display: inline-flex; flex-direction: row; align-items: flex-start; gap: 0; padding-top: 0; }
+.score-four-group::before { content: ''; position: absolute; top: 29px; left: 1px; right: 1px; border-top: 1px solid #59655d; }
+.score-pair-group { position: relative; padding: 0 1px; }
+.score-pair-group::before { content: none; }
+.score-note { width: 18px; min-width: 18px; max-width: 18px; flex: 0 0 18px; display: inline-grid; grid-template-rows: 7px 22px 5px 5px 7px 17px; align-items: center; justify-items: center; text-align: center; line-height: 1.1; overflow: visible; }
 .high-row { grid-row: 1; height: 7px; display: grid; place-items: center; }
-.high-dot { display: none; width: 4px; height: 4px; border-radius: 50%; background: currentColor; }
+.high-dot { display: none; width: 3px; height: 3px; border-radius: 50%; background: currentColor; }
 .score-note.high-note .high-dot { display: block; }
-.score-note strong { grid-row: 1; }
-.score-note strong { grid-row: 2; }
+.score-note strong { position: relative; grid-row: 2; }
 .score-note.high-note strong { color: #315f49; }
 .division-line { display: block; width: 18px; height: 0; border-top: 1px solid transparent; }
 .division-first { grid-row: 3; }
@@ -125,11 +150,18 @@ h1 { margin: 0 0 12px; color: var(--green); font-size: clamp(30px, 3.2vw, 43px);
 .score-note .division-second { border-color: transparent; }
 .score-note.divided-once .division-first { border-color: #59655d; }
 .score-note.divided-twice .division-first, .score-note.divided-twice .division-second { border-color: #59655d; }
-.low-row { grid-row: 5; height: 9px; display: grid; place-items: center; }
-.low-dot { display: none; width: 4px; height: 4px; border-radius: 50%; background: currentColor; }
+.low-row { grid-row: 5; height: 7px; display: grid; place-items: center; }
+.low-dot { display: none; width: 3px; height: 3px; border-radius: 50%; background: currentColor; }
 .score-note.low-note .low-dot { display: block; }
-.score-note small { grid-row: 6; color: #a7a79e; font-family: 'Noto Serif SC', serif; font-size: 9px; margin-top: 0; }
-.grace-note { color: var(--orange); font-size: .52em; margin-left: 2px; vertical-align: super; }
+.score-note small { grid-row: 6; color: #a7a79e; font-family: 'Noto Serif SC', serif; font-size: 11px; margin-top: 0; }
+.grace-cluster { position: absolute; left: 9px; top: -2px; width: 18px; height: 24px; pointer-events: none; z-index: 2; }
+.grace-note { position: absolute; top: -10px; left: 1px; color: var(--orange); font: 500 10px/1 'DM Mono', monospace; }
+.grace-pitch { position: relative; display: inline-block; }
+.grace-octave-dot { position: absolute; width: 3px; height: 3px; top: -4px; left: 50%; transform: translateX(-50%); border-radius: 50%; background: currentColor; }
+.grace-low { position: relative; }
+.grace-low::after { content: ''; position: absolute; width: 3px; height: 3px; left: 50%; bottom: -4px; transform: translateX(-50%); border-radius: 50%; background: currentColor; }
+.grace-link { position: absolute; top: -3px; left: 2px; color: var(--orange); font: 500 10px/1 'DM Mono', monospace; font-style: normal; }
+.grace-sign { position: absolute; top: 5px; left: 2px; color: var(--orange); font: 8px/1 'Noto Serif SC', serif; font-style: normal; }
 .score-empty { display: inline-block; width: 18px; color: #b7b7ae; }
 .bar-line { color: #b3b3a9; padding: 0 4px; }
 .status-dot { display: inline-block; width: 6px; height: 6px; background: #9cae9e; border-radius: 50%; margin: 0 7px 1px 0; }
@@ -148,6 +180,11 @@ kbd { border: 1px solid #d5d3ca; border-radius: 3px; padding: 1px 5px; backgroun
   .icon-button { display: none; }
   .export-button { padding: 8px 10px; }
   .import-button { padding: 8px 9px; font-size: 12px; }
+  .tutorial-button { padding: 8px 9px; font-size: 12px; }
+  .tutorial-card { padding: 28px 21px 22px; }
+  .tutorial-card h2 { font-size: 23px; }
+  .tutorial-steps > div { grid-template-columns: 28px 1fr; }
+  .tutorial-steps span { grid-column: 2; }
   .page { padding: 38px 17px 55px; }
   .hero { display: block; margin-bottom: 27px; }
   .hero-badge { margin-top: 18px; }
