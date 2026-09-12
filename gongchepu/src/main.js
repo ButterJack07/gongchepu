@@ -13,7 +13,8 @@ const state = {
   archiveText: '',
   archiveEditing: false,
   numberedArchiveText: '',
-  numberedOverride: null
+  numberedOverride: null,
+  numberedView: 'score'
 };
 
 const notes = ['上', '尺', '工', '凡', '六', '五', '乙', '合', '四', '伍', '亿', '句'];
@@ -62,6 +63,8 @@ function loadSavedState() {
     state.text = saved.text;
     state.rows = saved.rows;
     state.archiveText = typeof saved.archiveText === 'string' ? saved.archiveText : '';
+    state.numberedArchiveText = typeof saved.numberedArchiveText === 'string' ? saved.numberedArchiveText : '';
+    state.numberedOverride = saved.numberedOverride || null;
   } catch {
     // Directly opened local files may restrict storage access.
   }
@@ -70,7 +73,7 @@ function loadSavedState() {
 function saveState() {
   if (!state.archiveEditing) state.archiveText = exportArchive();
   try {
-    localStorage.setItem(storageKey, JSON.stringify({ text: state.text, rows: state.rows, archiveText: state.archiveText }));
+    localStorage.setItem(storageKey, JSON.stringify({ text: state.text, rows: state.rows, archiveText: state.archiveText, numberedArchiveText: state.numberedArchiveText, numberedOverride: state.numberedOverride }));
   } catch {
     // Keep editing available even when browser storage is unavailable.
   }
@@ -224,14 +227,31 @@ function exportArchive() {
   return lines.join('\n');
 }
 
+function exportCombinedArchive() {
+  const gongcheText = exportArchive();
+  const numberedText = state.numberedArchiveText || (state.numberedOverride ? exportNumberedArchive(state.numberedOverride) : '');
+  return numberedText ? `${gongcheText}\n\n${numberedText}` : gongcheText;
+}
+
+function getArchiveForDownload() {
+  return state.numberedArchiveText ? exportCombinedArchive() : exportArchive();
+}
+
 function numberedValue(note) {
   return note.number || '—';
+}
+
+function numberedArchiveValue(note) {
+  const number = numberedValue(note);
+  if (note.high) return `^${number}`;
+  if (note.low || lowGongche.has(note.gongche)) return `_${number}`;
+  return number;
 }
 
 function exportNumberedArchive(bars) {
   const lines = ['---', 'format: numbered-notation', 'version: 1', 'meter: 2/4', 'source: gongchepu', '---', '', '## 简谱', ''];
   bars.forEach((bar, index) => {
-    const printBeat = (groups) => groups.flatMap((group) => group.notes.map((note) => `${numberedValue(note)}{${note.char || ''}}`)).join(' ');
+    const printBeat = (groups) => groups.flatMap((group) => group.notes.map((note) => `${numberedArchiveValue(note)}{${note.char || ''}}`)).join(' ');
     lines.push(`### 小节${index + 1}`, `第一拍: ${printBeat(bar.first)}`, `第二拍: ${printBeat(bar.second)}`, '');
   });
   return lines.join('\n');
@@ -249,9 +269,12 @@ function parseNumberedArchive(source) {
     const tokens = match[2].match(/[^\s]+/g) || [];
     tokens.forEach((token) => {
       const tokenMatch = token.match(/^([^{}]+)\{(.*)\}$/);
-      const number = tokenMatch ? tokenMatch[1] : token;
+      const rawNumber = tokenMatch ? tokenMatch[1] : token;
+      const high = rawNumber.startsWith('^');
+      const low = rawNumber.startsWith('_');
+      const number = rawNumber.replace(/^[_^]+/, '');
       const char = tokenMatch ? tokenMatch[2] : '';
-      groups.push({ char, rowId: `numbered-${bars.length}-${match[1]}-${groups.length}`, notes: [{ number, gongche: number, char, graces: [], isSubdivision: false }] });
+      groups.push({ char, rowId: `numbered-${bars.length}-${match[1]}-${groups.length}`, notes: [{ number, high, low, gongche: number, char, graces: [], isSubdivision: false }] });
     });
     bar[match[1] === '第一拍' ? 'first' : 'second'] = groups;
   });
@@ -265,6 +288,7 @@ function saveNumberedArchive() {
     state.numberedArchiveText = numberedArchiveEditor.value;
     saveState();
     renderScore();
+    if (numberedArchivePanel) numberedArchivePanel.hidden = false;
     showToast('简谱存档已保存');
   } catch (error) { showToast(error.message || '简谱存档格式有误'); }
 }
@@ -278,7 +302,8 @@ function syncArchiveFromState() {
 function parseArchive(source) {
   const notationStart = source.indexOf('## 工尺谱');
   if (notationStart < 0) throw new Error('缺少“## 工尺谱”段落');
-  const notation = source.slice(notationStart).split('\n');
+  const numberedStart = source.indexOf('## 简谱', notationStart);
+  const notation = source.slice(notationStart, numberedStart < 0 ? source.length : numberedStart).split('\n');
   const columns = [];
   let column = null;
   let columnIndex = -1;
@@ -321,6 +346,14 @@ function applyArchive(showMessage = false) {
     const rows = parseArchive(archiveEditor.value);
     state.rows = rows;
     state.archiveText = archiveEditor.value;
+    const numberedStart = archiveEditor.value.indexOf('---\nformat: numbered-notation');
+    if (numberedStart >= 0) {
+      state.numberedArchiveText = archiveEditor.value.slice(numberedStart).trim();
+      state.numberedOverride = parseNumberedArchive(state.numberedArchiveText);
+    } else {
+      state.numberedArchiveText = '';
+      state.numberedOverride = null;
+    }
     state.text = rows.map((column) => column.chars.map((row) => row.char).join('')).join('，');
     input.value = state.text;
     saveState();
@@ -333,7 +366,7 @@ function applyArchive(showMessage = false) {
 }
 
 function copyArchive() {
-  const text = archiveEditor.value || exportArchive();
+  const text = archiveEditor.value || exportCombinedArchive();
   if (navigator.clipboard?.writeText) {
     navigator.clipboard.writeText(text).then(() => showToast('存档文本已复制')).catch(() => showToast('复制失败，请手动复制'));
     return;
@@ -344,7 +377,7 @@ function copyArchive() {
 }
 
 function downloadArchive() {
-  const blob = new Blob([archiveEditor.value || exportArchive()], { type: 'text/markdown;charset=utf-8' });
+  const blob = new Blob([getArchiveForDownload()], { type: 'text/plain;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
@@ -364,7 +397,9 @@ function openArchiveFile() {
 function convertToScore() {
   try {
     state.numberedOverride = null;
+    state.numberedArchiveText = '';
     renderScore();
+    saveState();
     showToast('已按 2/4 拍一板一眼转写简谱');
   } catch (error) {
     console.error('Score conversion failed:', error);
@@ -437,11 +472,15 @@ function scoreNoteMarkup(number, graceNumber, char) {
 
 function groupedScoreMarkup(group, divisionLevel = 0, showLyric = true) {
   const graceMarkup = group.graces.map((number) => `<sup class="grace-note">${number}</sup>`).join('');
-  const lowClass = lowGongche.has(group.gongche) ? ' low-note' : '';
+  const isLow = group.low || (!group.high && lowGongche.has(group.gongche));
+  const lowClass = isLow ? ' low-note' : '';
   const divisionClass = divisionLevel === 2 ? ' divided-twice' : divisionLevel === 1 ? ' divided-once' : '';
-  const displayNumber = group.number === '—' ? '__' : group.number;
-  return `<span class="score-note${lowClass}${divisionClass}">
-    <strong>${displayNumber}${graceMarkup}</strong>
+  const displayNumber = numberedValue(group);
+  const highClass = group.high ? ' high-note' : '';
+  const octavePrefix = '';
+  return `<span class="score-note${lowClass}${highClass}${divisionClass}">
+    <span class="high-row"><i class="high-dot"></i></span>
+    <strong>${octavePrefix}${displayNumber}${graceMarkup}</strong>
     <span class="division-line division-first"></span>
     <span class="division-line division-second"></span>
     <span class="low-row"><i class="low-dot"></i></span>
@@ -577,6 +616,9 @@ function legacyRenderScore() {
   const renderedBars = state.numberedOverride || (bars.length ? bars : [{ first: [], second: [] }]);
   if (!state.numberedOverride) {
     state.numberedArchiveText = exportNumberedArchive(renderedBars);
+  }
+  if (!state.numberedOverride) {
+    state.numberedArchiveText = exportNumberedArchive(renderedBars);
     if (!numberedArchivePanel.hidden && document.activeElement !== numberedArchiveEditor) numberedArchiveEditor.value = state.numberedArchiveText;
   }
   const renderedLyrics = new Set();
@@ -613,12 +655,20 @@ function renderScore() {
     // Every rhythm mark creates its own time position. Marks that map to the
     // same beat are intentionally not merged: 、。- has three positions.
     const placements = rhythms
-      .map((rhythm) => ({
-        rhythm,
-        beat: rhythmBeat(rhythm),
-        dash: rhythm === '—',
-        triangle: rhythm === '△'
-      }))
+      .map((rhythm, rhythmIndex) => {
+        const previousRhythm = rhythms[rhythmIndex - 1];
+        // Two adjacent special pairs are read as ordinary beat markers:
+        // 。- becomes 。、, and 、△ becomes 、。 . The second symbol keeps
+        // its position but loses its upgrade effect.
+        const isPeriodDashPair = previousRhythm === '。' && rhythm === '—';
+        const isCommaTrianglePair = previousRhythm === '、' && rhythm === '△';
+        return {
+          rhythm,
+          beat: isPeriodDashPair ? 0 : isCommaTrianglePair ? 1 : rhythmBeat(rhythm),
+          dash: rhythm === '—' && !isPeriodDashPair,
+          triangle: rhythm === '△' && !isCommaTrianglePair
+        };
+      })
       .filter((placement) => placement.beat !== null);
     const markerBeats = placements.map((placement) => placement.beat);
     const isGrace = note === '√';
@@ -688,8 +738,11 @@ function renderScore() {
       if (!group) { group = { char: event.row.char, rowId: event.rowId, notes: [] }; grouped.push(group); }
        const model = { eventId: event.eventId, number: gongcheMap[event.note] || '—', gongche: event.note, char: event.row.char, graces: [], isSubdivision: event.dash || event.triangle, hideLyric: event.moveLyric };
        event.model = model;
-       group.notes.push(model);
-       (event.extensions || []).forEach((extension) => group.notes.push({ eventId: extension.eventId, number: gongcheMap[extension.note] || '—', gongche: extension.note, char: extension.row.char, graces: [], isSubdivision: true, forceLyric: extension.moveLyric }));
+       if (!group.notes.some((item) => item.eventId === model.eventId)) group.notes.push(model);
+       (event.extensions || []).forEach((extension) => {
+         if (group.notes.some((item) => item.eventId === extension.eventId)) return;
+         group.notes.push({ eventId: extension.eventId, number: gongcheMap[extension.note] || '—', gongche: extension.note, char: extension.row.char, graces: [], isSubdivision: true, forceLyric: extension.moveLyric });
+       });
     });
     bar[key] = grouped;
   }));
@@ -704,16 +757,38 @@ function renderScore() {
       previousModel = event.model;
     }
   });
-  const renderedBars = bars.length ? bars : [{ first: [], second: [] }];
+  // Once a numbered archive has been saved, it is the source for the
+  // numbered view. Do not rebuild the visible score from Gongche here.
+  const renderedBars = state.numberedOverride || (bars.length ? bars : [{ first: [], second: [] }]);
   const renderedLyrics = new Set();
   const renderBeat = (groups) => groups.length ? groups.map((group, groupIndex) => {
-    const uniqueNotes = group.notes.filter((note, index, all) => index === all.findIndex((item) => (item.eventId || item) === (note.eventId || note)));
+    const uniqueNotes = group.notes.filter((note, index, all) => index === all.findIndex((item) => item.eventId === note.eventId));
     return `<span class="score-char-group">${uniqueNotes.map((note, noteIndex) => { const level = getDivisionLevel(groups, { ...group, notes: uniqueNotes }, noteIndex); const show = note.forceLyric || (!note.hideLyric && noteIndex === 0 && !renderedLyrics.has(group.rowId)); if (show) renderedLyrics.add(group.rowId); return groupedScoreMarkup(note, level, show); }).join('')}</span>`;
   }).join('') : '<span class="score-empty">·</span>';
   const markup = renderedBars.map((bar) => `<div class="score-bar"><div class="score-beat">${renderBeat(bar.first)}</div><div class="score-beat">${renderBeat(bar.second)}</div></div>`).join('');
-  preview.innerHTML = `<div class="score-heading"><div><strong>简谱 · 2/4</strong><span>先定位，再处理升级，最后分拍</span></div><button class="archive-small-button" data-action="export-score-image">导出简谱图片</button></div><div class="score-line">${markup}</div>`;
+  const archiveText = state.numberedArchiveText || exportNumberedArchive(renderedBars);
+  preview.innerHTML = `<div class="score-heading"><div><strong>简谱 · 2/4</strong><span>先定位，再处理升级，最后分拍</span></div><div class="score-view-actions"><button class="archive-small-button" data-action="toggle-numbered-view">${state.numberedView === 'archive' ? '简谱视图' : '简谱存档视图'}</button><button class="archive-small-button" data-action="export-score-image">导出简谱图片</button></div></div>${state.numberedView === 'archive' ? `<section class="score-archive-view"><textarea id="score-archive-editor" spellcheck="false">${archiveText}</textarea><button class="archive-small-button" data-action="save-score-archive">保存简谱存档修改</button></section>` : `<div class="score-line">${markup}</div>`}`;
   preview.hidden = false;
-  requestAnimationFrame(markScoreRowEnds);
+  if (state.numberedView === 'score') requestAnimationFrame(markScoreRowEnds);
+}
+
+function toggleNumberedView() {
+  state.numberedView = state.numberedView === 'score' ? 'archive' : 'score';
+  renderScore();
+}
+
+function saveScoreArchiveFromView() {
+  const editor = document.querySelector('#score-archive-editor');
+  if (!editor) return;
+  try {
+    state.numberedOverride = parseNumberedArchive(editor.value);
+    state.numberedArchiveText = editor.value;
+    saveState();
+    showToast('简谱存档已保存');
+    renderScore();
+  } catch (error) {
+    showToast(error.message || '简谱存档格式有误');
+  }
 }
 
 function markScoreRowEnds() {
@@ -884,6 +959,8 @@ document.addEventListener('click', (event) => {
     }
   }
   if (action === 'numbered-save') saveNumberedArchive();
+  if (action === 'toggle-numbered-view') toggleNumberedView();
+  if (action === 'save-score-archive') saveScoreArchiveFromView();
   if (action === 'archive-copy') copyArchive();
   if (action === 'archive-download') downloadArchive();
   if (action === 'archive-upload') openArchiveFile();
