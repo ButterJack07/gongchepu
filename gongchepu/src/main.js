@@ -11,7 +11,9 @@ const state = {
   activeTool: 'free',
   rows: [],
   archiveText: '',
-  archiveEditing: false
+  archiveEditing: false,
+  numberedArchiveText: '',
+  numberedOverride: null
 };
 
 const notes = ['上', '尺', '工', '凡', '六', '五', '乙', '合', '四', '伍', '亿', '句'];
@@ -131,7 +133,8 @@ document.querySelector('#app').innerHTML = `
             <button class="mode-button" data-action="note-mode">输入音符</button>
             <button class="mode-button" data-action="rhythm-mode">输入节奏</button>
             <button class="score-button" data-action="convert">转写简谱</button>
-            <button class="archive-button" data-action="archive-toggle">存档视图</button>
+            <button class="archive-button" data-action="archive-toggle">工尺存档</button>
+            <button class="numbered-archive-button" data-action="numbered-toggle">简谱存档</button>
             <button class="mini-button" data-action="undo">↶</button>
             <button class="mini-button" data-action="redo">↷</button>
           </div>
@@ -143,6 +146,11 @@ document.querySelector('#app').innerHTML = `
           </div>
           <textarea id="archive-editor" spellcheck="false" aria-label="Gongche Markdown 存档编辑器"></textarea>
           <p class="archive-hint">像 LaTeX 一样编辑存档；每个工尺最多三个节奏，格式错误会保留在编辑器中。</p>
+        </section>
+        <section class="archive-panel numbered-archive-panel" id="numbered-archive-panel" hidden>
+          <div class="archive-toolbar"><span>Numbered Markdown · 独立简谱数据</span><button class="archive-small-button" data-action="numbered-save">保存修改</button></div>
+          <textarea id="numbered-archive-editor" spellcheck="false" aria-label="简谱存档编辑器"></textarea>
+          <p class="archive-hint">编辑这里不会修改工尺存档；简谱视图会根据本存档重新渲染。</p>
         </section>
         <input id="archive-file-input" type="file" accept=".txt,text/plain" hidden />
         <div class="notation-board" id="notation-board"></div>
@@ -162,6 +170,8 @@ const convertButton = document.querySelector('[data-action="convert"]');
 const archivePanel = document.querySelector('#archive-panel');
 const archiveEditor = document.querySelector('#archive-editor');
 const archiveFileInput = document.querySelector('#archive-file-input');
+const numberedArchivePanel = document.querySelector('#numbered-archive-panel');
+const numberedArchiveEditor = document.querySelector('#numbered-archive-editor');
 
 function showToast(message) {
   toast.textContent = message;
@@ -212,6 +222,51 @@ function exportArchive() {
     lines.push('');
   });
   return lines.join('\n');
+}
+
+function numberedValue(note) {
+  return note.number || '—';
+}
+
+function exportNumberedArchive(bars) {
+  const lines = ['---', 'format: numbered-notation', 'version: 1', 'meter: 2/4', 'source: gongchepu', '---', '', '## 简谱', ''];
+  bars.forEach((bar, index) => {
+    const printBeat = (groups) => groups.flatMap((group) => group.notes.map((note) => `${numberedValue(note)}{${note.char || ''}}`)).join(' ');
+    lines.push(`### 小节${index + 1}`, `第一拍: ${printBeat(bar.first)}`, `第二拍: ${printBeat(bar.second)}`, '');
+  });
+  return lines.join('\n');
+}
+
+function parseNumberedArchive(source) {
+  if (!source.includes('format: numbered-notation')) throw new Error('不是简谱存档格式');
+  const bars = [];
+  let bar = null;
+  source.split('\n').forEach((line) => {
+    if (/^###\s+小节/.test(line)) { bar = { first: [], second: [] }; bars.push(bar); return; }
+    const match = line.match(/^(第一拍|第二拍):\s*(.*)$/);
+    if (!match || !bar) return;
+    const groups = [];
+    const tokens = match[2].match(/[^\s]+/g) || [];
+    tokens.forEach((token) => {
+      const tokenMatch = token.match(/^([^{}]+)\{(.*)\}$/);
+      const number = tokenMatch ? tokenMatch[1] : token;
+      const char = tokenMatch ? tokenMatch[2] : '';
+      groups.push({ char, rowId: `numbered-${bars.length}-${match[1]}-${groups.length}`, notes: [{ number, gongche: number, char, graces: [], isSubdivision: false }] });
+    });
+    bar[match[1] === '第一拍' ? 'first' : 'second'] = groups;
+  });
+  if (!bars.length) throw new Error('简谱存档没有小节');
+  return bars;
+}
+
+function saveNumberedArchive() {
+  try {
+    state.numberedOverride = parseNumberedArchive(numberedArchiveEditor.value);
+    state.numberedArchiveText = numberedArchiveEditor.value;
+    saveState();
+    renderScore();
+    showToast('简谱存档已保存');
+  } catch (error) { showToast(error.message || '简谱存档格式有误'); }
 }
 
 function syncArchiveFromState() {
@@ -308,6 +363,7 @@ function openArchiveFile() {
 
 function convertToScore() {
   try {
+    state.numberedOverride = null;
     renderScore();
     showToast('已按 2/4 拍一板一眼转写简谱');
   } catch (error) {
@@ -518,7 +574,11 @@ function legacyRenderScore() {
       });
     });
   });
-  const renderedBars = bars.length ? bars : [{ first: [], second: [] }];
+  const renderedBars = state.numberedOverride || (bars.length ? bars : [{ first: [], second: [] }]);
+  if (!state.numberedOverride) {
+    state.numberedArchiveText = exportNumberedArchive(renderedBars);
+    if (!numberedArchivePanel.hidden && document.activeElement !== numberedArchiveEditor) numberedArchiveEditor.value = state.numberedArchiveText;
+  }
   const renderedLyrics = new Set();
   const renderBeat = (groups) => groups.length ? groups.map((group, groupIndex) => `
     <span class="score-char-group" style="--group-size:${groups.length}">
@@ -816,6 +876,14 @@ document.addEventListener('click', (event) => {
     archivePanel.hidden = !archivePanel.hidden;
     if (!archivePanel.hidden) archiveEditor.value = state.archiveText || exportArchive();
   }
+  if (action === 'numbered-toggle') {
+    numberedArchivePanel.hidden = !numberedArchivePanel.hidden;
+    if (!numberedArchivePanel.hidden) {
+      if (!state.numberedArchiveText) renderScore();
+      numberedArchiveEditor.value = state.numberedArchiveText;
+    }
+  }
+  if (action === 'numbered-save') saveNumberedArchive();
   if (action === 'archive-copy') copyArchive();
   if (action === 'archive-download') downloadArchive();
   if (action === 'archive-upload') openArchiveFile();

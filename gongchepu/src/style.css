@@ -61,6 +61,7 @@ h1 { margin: 0 0 12px; color: var(--green); font-size: clamp(30px, 3.2vw, 43px);
 .mode-button.active { border-color: #315d47; color: #fff; background: #315d47; }
 .score-button { border: 1px solid #c5d5ca; background: #f3f8f2; color: #285c42; height: 29px; padding: 0 11px; border-radius: 4px; font-size: 12px; }
 .archive-button { border: 1px solid #d6c7b8; background: #fbf6ef; color: #8d6849; height: 29px; padding: 0 11px; border-radius: 4px; font-size: 12px; }
+.numbered-archive-button { border: 1px solid #c7d2df; background: #f3f7fb; color: #55718d; height: 29px; padding: 0 11px; border-radius: 4px; font-size: 12px; }
 .archive-panel { margin-bottom: 18px; border: 1px solid #ded6ca; border-radius: 5px; background: #f9f6f0; overflow: hidden; }
 .archive-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border-bottom: 1px solid #e6ded3; color: #8b8278; font: 11px 'DM Mono', monospace; }
 .archive-small-button { border: 1px solid #d7c8b8; background: #fffdfa; color: #85684e; border-radius: 3px; padding: 5px 8px; margin-left: 6px; font-size: 11px; }
