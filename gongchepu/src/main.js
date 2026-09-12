@@ -9,12 +9,15 @@ const state = {
   key: 'C',
   tonality: '♩ = 72',
   activeTool: 'free',
-  rows: []
+  rows: [],
+  archiveText: '',
+  archiveEditing: false
 };
 
 const notes = ['上', '尺', '工', '凡', '六', '五', '乙', '合', '四', '伍', '亿', '句'];
 const separators = /[，。！？；：、,.!?;:\n]/;
 const storageKey = 'gongchepu-editor-state';
+const archiveFormat = 'gongchepu';
 const keyboardNotes = {
   shang: '上', chi: '尺', gong: '工', fan: '凡', liu: '六', wu: '五', yi: '乙', si: '四', he: '合'
 };
@@ -56,14 +59,16 @@ function loadSavedState() {
     if (!saved || typeof saved.text !== 'string' || !Array.isArray(saved.rows)) return;
     state.text = saved.text;
     state.rows = saved.rows;
+    state.archiveText = typeof saved.archiveText === 'string' ? saved.archiveText : '';
   } catch {
     // Directly opened local files may restrict storage access.
   }
 }
 
 function saveState() {
+  if (!state.archiveEditing) state.archiveText = exportArchive();
   try {
-    localStorage.setItem(storageKey, JSON.stringify({ text: state.text, rows: state.rows }));
+    localStorage.setItem(storageKey, JSON.stringify({ text: state.text, rows: state.rows, archiveText: state.archiveText }));
   } catch {
     // Keep editing available even when browser storage is unavailable.
   }
@@ -81,7 +86,7 @@ state.rows.forEach((column) => column.chars.forEach((row) => {
     delete row.rhythms;
   }
   while (row.noteRhythms.length < row.notes.length) row.noteRhythms.push([]);
-  row.noteRhythms = row.noteRhythms.slice(0, row.notes.length).map((rhythms) => Array.isArray(rhythms) ? rhythms.slice(0, 2) : []);
+  row.noteRhythms = row.noteRhythms.slice(0, row.notes.length).map((rhythms) => Array.isArray(rhythms) ? rhythms.slice(0, 3) : []);
 }));
 saveState();
 let selectedIndex = 0;
@@ -96,14 +101,8 @@ document.querySelector('#app').innerHTML = `
         <div class="brand-mark">尺</div>
         <div><div class="brand-title">工尺谱 · 新编</div><div class="brand-subtitle">古谱今译，心声可见</div></div>
       </div>
-      <nav class="nav-tabs">
-        <button class="nav-tab active">编辑器</button>
-        <button class="nav-tab" data-action="library">我的曲谱</button>
-      </nav>
       <div class="header-actions">
-        <button class="icon-button" title="帮助">?</button>
-        <button class="icon-button" title="设置">⚙</button>
-        <button class="export-button" data-action="export">导出曲谱 <span>⌄</span></button>
+        <div class="archive-header-actions"><button class="import-button" data-action="archive-upload">导入存档</button><button class="export-button" data-action="export">导出存档 <span>↓</span></button></div>
       </div>
     </header>
 
@@ -129,14 +128,23 @@ document.querySelector('#app').innerHTML = `
         <div class="card-header mapping-header">
           <div class="step-label"><span>02</span> 编排工尺谱</div>
           <div class="mapping-tools">
-            <button class="mini-button" data-action="auto">✦ 自动配工尺</button>
             <button class="mode-button" data-action="note-mode">输入音符</button>
             <button class="mode-button" data-action="rhythm-mode">输入节奏</button>
             <button class="score-button" data-action="convert">转写简谱</button>
+            <button class="archive-button" data-action="archive-toggle">存档视图</button>
             <button class="mini-button" data-action="undo">↶</button>
             <button class="mini-button" data-action="redo">↷</button>
           </div>
         </div>
+        <section class="archive-panel" id="archive-panel" hidden>
+          <div class="archive-toolbar">
+            <span>Gongche Markdown · 编辑后点击保存修改</span>
+            <button class="archive-small-button" data-action="archive-import">保存修改</button>
+          </div>
+          <textarea id="archive-editor" spellcheck="false" aria-label="Gongche Markdown 存档编辑器"></textarea>
+          <p class="archive-hint">像 LaTeX 一样编辑存档；每个工尺最多三个节奏，格式错误会保留在编辑器中。</p>
+        </section>
+        <input id="archive-file-input" type="file" accept=".txt,text/plain" hidden />
         <div class="notation-board" id="notation-board"></div>
         <div class="notation-footer"><span><i class="status-dot"></i> 已自动保存</span><span>点击右侧工尺可切换，点击 ＋ 可继续添加</span></div>
         <div class="score-preview" id="score-preview" hidden></div>
@@ -151,12 +159,151 @@ const board = document.querySelector('#notation-board');
 const input = document.querySelector('#lyric-input');
 const toast = document.querySelector('#toast');
 const convertButton = document.querySelector('[data-action="convert"]');
+const archivePanel = document.querySelector('#archive-panel');
+const archiveEditor = document.querySelector('#archive-editor');
+const archiveFileInput = document.querySelector('#archive-file-input');
 
 function showToast(message) {
   toast.textContent = message;
   toast.classList.add('show');
   clearTimeout(showToast.timer);
   showToast.timer = setTimeout(() => toast.classList.remove('show'), 2200);
+}
+
+function escapeArchiveChar(char) {
+  return char === ' ' ? '\\s' : char;
+}
+
+function unescapeArchiveChar(char) {
+  return char === '\\s' ? ' ' : char;
+}
+
+function exportArchive() {
+  const lines = [
+    '---',
+    `format: ${archiveFormat}`,
+    'version: 1',
+    'title: 未命名曲谱',
+    'meter: 2/4',
+    'style: 一板一眼',
+    'key: C',
+    '---',
+    '',
+    '## 歌词',
+    '',
+    state.text,
+    '',
+    '## 工尺谱',
+    ''
+  ];
+  let sentenceIndex = 0;
+  state.rows.forEach((column) => {
+    sentenceIndex += 1;
+    lines.push(`### 第${sentenceIndex}句`, '');
+    column.chars.forEach((row) => {
+      const marks = row.notes.map((note, noteIndex) => {
+        if (note === '√') return '[√]';
+        const rhythms = row.noteRhythms[noteIndex] || [];
+        const archiveRhythms = rhythms.map((rhythm) => rhythm === '△' ? '<' : rhythm === '—' ? '-' : rhythm).join('');
+        return `[${note}@${archiveRhythms}]`;
+      });
+      lines.push(`${escapeArchiveChar(row.char)} ${marks.join(' ')}`.trim());
+    });
+    lines.push('');
+  });
+  return lines.join('\n');
+}
+
+function syncArchiveFromState() {
+  if (state.archiveEditing) return;
+  state.archiveText = exportArchive();
+  if (archiveEditor) archiveEditor.value = state.archiveText;
+}
+
+function parseArchive(source) {
+  const notationStart = source.indexOf('## 工尺谱');
+  if (notationStart < 0) throw new Error('缺少“## 工尺谱”段落');
+  const notation = source.slice(notationStart).split('\n');
+  const columns = [];
+  let column = null;
+  let columnIndex = -1;
+  notation.forEach((line) => {
+    if (/^### /.test(line)) {
+      column = { chars: [] };
+      columns.push(column);
+      columnIndex += 1;
+      return;
+    }
+    if (!column || !line.trim() || line.trim().startsWith('##')) return;
+    const match = line.match(/^(.*?)\s*((?:\[[^\]]*\]\s*)*)$/);
+    if (!match) throw new Error(`无法解析：${line}`);
+    const char = unescapeArchiveChar(match[1].trim());
+    const tokenSource = match[2].trim();
+    const notes = [];
+    const noteRhythms = [];
+    const tokenPattern = /\[([^@\]]+)(?:@([^\]]*))?\]/g;
+    let token;
+    while ((token = tokenPattern.exec(tokenSource))) {
+      const note = token[1];
+      if (note === '√') {
+        notes.push(note);
+        noteRhythms.push([]);
+        continue;
+      }
+      const rhythms = [...(token[2] || '')].map((rhythm) => rhythm === '<' ? '△' : rhythm === '-' ? '—' : rhythm);
+      if (rhythms.length > 3) throw new Error(`一个工尺最多只能有三个节奏：${line}`);
+      notes.push(note);
+      noteRhythms.push(rhythms);
+    }
+    column.chars.push({ id: `archive-${columnIndex}-${column.chars.length}-${char}`, char, notes, noteRhythms });
+  });
+  if (!columns.length) throw new Error('没有找到可用的工尺谱内容');
+  return columns;
+}
+
+function applyArchive(showMessage = false) {
+  try {
+    const rows = parseArchive(archiveEditor.value);
+    state.rows = rows;
+    state.archiveText = archiveEditor.value;
+    state.text = rows.map((column) => column.chars.map((row) => row.char).join('')).join('，');
+    input.value = state.text;
+    saveState();
+    renderBoard();
+    document.querySelector('#char-count').textContent = `${[...state.text].length} 字`;
+    if (showMessage) showToast('存档修改已同步');
+  } catch (error) {
+    if (showMessage) showToast(error.message || '存档格式有误');
+  }
+}
+
+function copyArchive() {
+  const text = archiveEditor.value || exportArchive();
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(text).then(() => showToast('存档文本已复制')).catch(() => showToast('复制失败，请手动复制'));
+    return;
+  }
+  archiveEditor.focus();
+  archiveEditor.select();
+  showToast('请使用 Ctrl+C 复制存档文本');
+}
+
+function downloadArchive() {
+  const blob = new Blob([archiveEditor.value || exportArchive()], { type: 'text/markdown;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'gongchepu.txt';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  showToast('存档文件已导出');
+}
+
+function openArchiveFile() {
+  archiveFileInput.value = '';
+  archiveFileInput.click();
 }
 
 function convertToScore() {
@@ -184,13 +331,13 @@ function renderBoard() {
             <div class="lyric-char">${row.char}</div>
             <div class="char-annotation">
             <div class="note-stack">${row.notes.map((note, noteIndex) => `<button class="notation-note ${selectedIndex === flattenIndex(columnIndex, charIndex) && selectedNoteIndex === noteIndex && state.activeTool === 'rhythm' ? 'rhythm-target' : ''}" style="--note-index:${noteIndex}" data-note-index="${noteIndex}" data-type="note" title="点击选中工尺字符">${note}</button>`).join('')}</div>
-            ${row.notes.map((note, noteIndex) => `<div class="rhythm-stack" style="--note-index:${noteIndex}">${(row.noteRhythms[noteIndex] || []).map((rhythm, rhythmIndex) => rhythm ? `<span class="notation-rhythm ${rhythm === '△' ? 'triangle-rhythm' : ''}" style="--rhythm-index:${rhythmIndex}">${rhythm}</span>` : '').join('')}</div>`).join('')}
-            <button class="add-note" data-type="add-note" title="为这个字添加一个工尺">＋</button>
+            ${row.notes.map((note, noteIndex) => `<div class="rhythm-stack" style="--note-index:${noteIndex}">${(row.noteRhythms[noteIndex] || []).map((rhythm, rhythmIndex) => rhythm ? `<span class="notation-rhythm ${rhythm === '△' ? 'triangle-rhythm' : ''}" style="--rhythm-index:${rhythmIndex}">${rhythm === '—' ? '__' : rhythm}</span>` : '').join('')}</div>`).join('')}
           </div>
         </div>
       `).join('')}
     </div>
   `).join('') : '<div class="empty-board">先输入一段文字，开始编排你的旋律</div>';
+  syncArchiveFromState();
 }
 
 function syncToolButtons() {
@@ -236,8 +383,9 @@ function groupedScoreMarkup(group, divisionLevel = 0, showLyric = true) {
   const graceMarkup = group.graces.map((number) => `<sup class="grace-note">${number}</sup>`).join('');
   const lowClass = lowGongche.has(group.gongche) ? ' low-note' : '';
   const divisionClass = divisionLevel === 2 ? ' divided-twice' : divisionLevel === 1 ? ' divided-once' : '';
+  const displayNumber = group.number === '—' ? '__' : group.number;
   return `<span class="score-note${lowClass}${divisionClass}">
-    <strong>${group.number}${graceMarkup}</strong>
+    <strong>${displayNumber}${graceMarkup}</strong>
     <span class="division-line division-first"></span>
     <span class="division-line division-second"></span>
     <span class="low-row"><i class="low-dot"></i></span>
@@ -402,15 +550,27 @@ function renderScore() {
   const ensureBar = () => currentBar || (currentBar = { first: [], second: [] }, bars.push(currentBar), currentBar);
   characters.forEach((row) => row.notes.forEach((note, noteIndex) => {
     const rhythms = row.noteRhythms[noteIndex] || [];
-    const markerBeats = rhythms.map((item) => rhythmBeat(item)).filter((beat) => beat !== null);
+    // Every rhythm mark creates its own time position. Marks that map to the
+    // same beat are intentionally not merged: 、。- has three positions.
+    const placements = rhythms
+      .map((rhythm) => ({
+        rhythm,
+        beat: rhythmBeat(rhythm),
+        dash: rhythm === '—',
+        triangle: rhythm === '△'
+      }))
+      .filter((placement) => placement.beat !== null);
+    const markerBeats = placements.map((placement) => placement.beat);
     const isGrace = note === '√';
-    const beatsForNote = isGrace ? (currentBeat === null ? [] : [currentBeat]) : (markerBeats.length ? markerBeats : (currentBeat === null ? [] : [currentBeat]));
+    const beatsForNote = isGrace ? (currentBeat === null ? [] : [{ beat: currentBeat }]) : (placements.length ? placements : (currentBeat === null ? [] : [{ beat: currentBeat }]));
     if (!beatsForNote.length) return;
 
     // One Gongche note may carry two rhythm marks. It must be emitted once
     // for each marked beat, rather than only using the first mark.
-    beatsForNote.forEach((beat) => {
-      if (beat === 0 && (markerBeats.length || currentBeat === null)) {
+    beatsForNote.forEach((placement) => {
+      const beat = placement.beat;
+      const startsBar = placement.rhythm === '、' || placement.rhythm === '—';
+      if (beat === 0 && (startsBar || currentBeat === null)) {
         currentBar = { first: [], second: [] };
         bars.push(currentBar);
         currentBeat = 0;
@@ -425,8 +585,8 @@ function renderScore() {
         rowId: row.id,
         bar: ensureBar(),
         beat,
-        dash: rhythms.includes('—'),
-        triangle: rhythms.includes('△'),
+        dash: placement.dash || false,
+        triangle: placement.triangle || false,
         grace: isGrace,
         moveLyric: noteIndex === 0 && (rhythms[0] === '—' || rhythms[0] === '△')
       };
@@ -438,6 +598,28 @@ function renderScore() {
     const previous = events[index - 1];
     if ((event.dash || event.triangle) && previous) (previous.extensions ||= []).push(event);
   });
+
+  // Stage 3: after upgrade relations are complete, remove repeated pitches
+  // inside the same beat. The same note may still appear in another beat or
+  // another bar. Keep the first event and carry any upgrade references over.
+  bars.forEach((bar) => ['first', 'second'].forEach((key) => {
+    const seen = new Map();
+    bar[key] = bar[key].filter((event) => {
+      if (event.grace) return true;
+      const pitch = gongcheMap[event.note] || event.note;
+      if (!seen.has(pitch)) {
+        seen.set(pitch, event);
+        return true;
+      }
+      const kept = seen.get(pitch);
+      if (event.extensions?.length) {
+        kept.extensions = [...(kept.extensions || []), ...event.extensions];
+      }
+      return false;
+    });
+  }));
+
+  // Stage 4: group by lyric character and subdivide after deduplication.
   bars.forEach((bar) => ['first', 'second'].forEach((key) => {
     const grouped = [];
     bar[key].forEach((event) => {
@@ -451,36 +633,6 @@ function renderScore() {
     });
     bar[key] = grouped;
   }));
-
-  // Final sustain check: 、+△ on a single-note character means that note
-  // fills the whole bar when the next rhythm marker starts a new first beat.
-  // Keep the first-beat note, but render the second-beat repeat as a dash
-  // without octave dots or grace marks.
-  characters.forEach((row, rowIndex) => {
-    if (row.notes.length !== 1) return;
-    const rhythms = row.noteRhythms[0] || [];
-    if (!(rhythms.includes('、') && rhythms.includes('△'))) return;
-    let nextMarker = null;
-    for (let index = rowIndex + 1; index < characters.length && !nextMarker; index += 1) {
-      const nextCharacter = characters[index];
-      for (let noteIndex = 0; noteIndex < nextCharacter.notes.length; noteIndex += 1) {
-        const rhythmList = nextCharacter.noteRhythms[noteIndex] || [];
-        nextMarker = rhythmList.find((rhythm) => rhythm === '、' || rhythm === '。' || rhythm === '—' || rhythm === '△');
-        if (nextMarker) break;
-      }
-    }
-    if (nextMarker !== '、') return;
-    const secondGroup = bars
-      .map((bar) => bar.second.find((group) => group.rowId === row.id))
-      .find(Boolean);
-    if (!secondGroup) return;
-    secondGroup.notes.forEach((note) => {
-      note.number = '—';
-      note.gongche = '—';
-      note.graces = [];
-      note.isSubdivision = false;
-    });
-  });
 
   // Post-process grace notes after bar placement and subdivision. They never
   // create a beat; they attach to the preceding real note only.
@@ -499,8 +651,65 @@ function renderScore() {
     return `<span class="score-char-group">${uniqueNotes.map((note, noteIndex) => { const level = getDivisionLevel(groups, { ...group, notes: uniqueNotes }, noteIndex); const show = note.forceLyric || (!note.hideLyric && noteIndex === 0 && !renderedLyrics.has(group.rowId)); if (show) renderedLyrics.add(group.rowId); return groupedScoreMarkup(note, level, show); }).join('')}</span>`;
   }).join('') : '<span class="score-empty">·</span>';
   const markup = renderedBars.map((bar) => `<div class="score-bar"><div class="score-beat">${renderBeat(bar.first)}</div><div class="score-beat">${renderBeat(bar.second)}</div></div>`).join('');
-  preview.innerHTML = `<div class="score-heading"><strong>简谱 · 2/4</strong><span>先定位，再处理升级，最后分拍</span></div><div class="score-line">${markup}</div>`;
+  preview.innerHTML = `<div class="score-heading"><div><strong>简谱 · 2/4</strong><span>先定位，再处理升级，最后分拍</span></div><button class="archive-small-button" data-action="export-score-image">导出简谱图片</button></div><div class="score-line">${markup}</div>`;
   preview.hidden = false;
+  requestAnimationFrame(markScoreRowEnds);
+}
+
+function markScoreRowEnds() {
+  const bars = [...document.querySelectorAll('.score-line .score-bar')];
+  bars.forEach((bar) => bar.classList.remove('row-end'));
+  bars.forEach((bar, index) => {
+    const next = bars[index + 1];
+    if (!next || next.offsetTop !== bar.offsetTop) bar.classList.add('row-end');
+  });
+}
+
+function escapeXml(value) {
+  return String(value).replace(/[<>&'"]/g, (char) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' })[char]);
+}
+
+function exportScoreImage() {
+  const scoreLine = document.querySelector('.score-line');
+  if (!scoreLine) {
+    showToast('请先点击转写简谱');
+    return;
+  }
+  const width = Math.max(scoreLine.scrollWidth + 32, 420);
+  const height = Math.max(scoreLine.scrollHeight + 32, 110);
+  const bars = [...scoreLine.querySelectorAll('.score-bar')];
+  const lineRect = scoreLine.getBoundingClientRect();
+  const barMarkup = bars.map((bar) => {
+    const barRect = bar.getBoundingClientRect();
+    const x = barRect.left - lineRect.left + 16;
+    const y = barRect.top - lineRect.top + 16;
+    const groups = [...bar.querySelectorAll('.score-note')].map((note) => {
+      const rect = note.getBoundingClientRect();
+      const nx = rect.left - lineRect.left + rect.width / 2 + 16;
+      const ny = rect.top - lineRect.top + 30;
+      const number = note.querySelector('strong')?.textContent || '';
+      const lyric = note.querySelector('small')?.textContent || '';
+      const lowDot = note.classList.contains('low-note') ? `<circle cx="${nx}" cy="${ny + 9}" r="2" class="low-dot-image"/>` : '';
+      return `<text x="${nx}" y="${ny}" text-anchor="middle" class="number">${escapeXml(number)}</text>${lowDot}<text x="${nx}" y="${ny + 42}" text-anchor="middle" class="lyric">${escapeXml(lyric)}</text>`;
+    }).join('');
+    const rightEdge = barRect.right - lineRect.left + 16;
+    const bottomEdge = barRect.bottom - lineRect.top + 16;
+    return `<g>${groups}<line x1="${rightEdge}" y1="${y}" x2="${rightEdge}" y2="${bottomEdge}" class="bar-line"/></g>`;
+  }).join('');
+  const rowLines = [...scoreLine.querySelectorAll('.score-bar.row-end')].map((bar) => {
+    const rect = bar.getBoundingClientRect();
+    const y = rect.bottom - lineRect.top + 16;
+    return `<line x1="16" y1="${y}" x2="${width - 16}" y2="${y}" class="row-line"/>`;
+  }).join('');
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="100%" height="100%" fill="#fffefa"/><style>.number{font:600 18px serif;fill:#3e4b42}.lyric{font:12px serif;fill:#a7a79e}.bar-line{stroke:#d9d8cf;stroke-width:1}.row-line{stroke:#d9d8cf;stroke-width:1}.low-dot-image{fill:#3e4b42}</style>${barMarkup}${rowLines}</svg>`;
+  const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'gongchepu-score.svg';
+  link.click();
+  URL.revokeObjectURL(url);
+  showToast('简谱图片已导出');
 }
 
 function selectCharacter(index) {
@@ -526,6 +735,24 @@ function syncRows() {
 input.addEventListener('input', (event) => {
   state.text = event.target.value;
   syncRows();
+});
+
+archiveFileInput.addEventListener('change', async (event) => {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  try {
+    archiveEditor.value = await file.text();
+    applyArchive(true);
+    archivePanel.hidden = false;
+  } catch {
+    showToast('无法读取存档文件');
+  }
+});
+
+archiveEditor.addEventListener('focus', () => { state.archiveEditing = true; });
+archiveEditor.addEventListener('blur', () => { state.archiveEditing = false; });
+document.addEventListener('click', (event) => {
+  if (event.target.closest('[data-action="archive-import"]')) applyArchive(true);
 });
 
 board.addEventListener('click', (event) => {
@@ -558,10 +785,6 @@ board.addEventListener('click', (event) => {
     const current = notes.indexOf(row.notes[noteIndex]);
     row.notes[noteIndex] = notes[(current + 1) % notes.length];
   }
-  if (event.target.dataset.type === 'add-note') {
-    row.notes.push(notes[row.notes.length % notes.length]);
-    row.noteRhythms.push([]);
-  }
   saveState();
   renderBoard();
 });
@@ -579,7 +802,6 @@ document.addEventListener('click', (event) => {
     document.querySelector('#char-count').textContent = '0 字';
     input.focus();
   }
-  if (action === 'auto') { state.rows = buildRows(state.text); saveState(); renderBoard(); showToast('已为文字自动生成工尺字符'); }
   if (action === 'note-mode' || action === 'rhythm-mode') {
     const nextTool = action === 'note-mode' ? 'note' : 'rhythm';
     state.activeTool = state.activeTool === nextTool ? null : nextTool;
@@ -589,7 +811,15 @@ document.addEventListener('click', (event) => {
   if (action === 'convert') {
     convertToScore();
   }
-  if (action === 'export') { showToast('曲谱已准备好，可继续完善后导出'); }
+  if (action === 'export-score-image') exportScoreImage();
+  if (action === 'archive-toggle') {
+    archivePanel.hidden = !archivePanel.hidden;
+    if (!archivePanel.hidden) archiveEditor.value = state.archiveText || exportArchive();
+  }
+  if (action === 'archive-copy') copyArchive();
+  if (action === 'archive-download') downloadArchive();
+  if (action === 'archive-upload') openArchiveFile();
+  if (action === 'export') downloadArchive();
   if (action === 'library') { showToast('曲谱库功能正在整理中'); }
   if (action === 'undo' || action === 'redo') showToast(action === 'undo' ? '已撤销上一步操作' : '已恢复上一步操作');
 });
@@ -667,7 +897,7 @@ document.addEventListener('keydown', (event) => {
     const character = getCharacterAt(selectedIndex);
     if (character && character.notes.length) {
       const rhythms = character.noteRhythms[selectedNoteIndex] || [];
-      if (rhythms.length < 2) rhythms.push(keyboardRhythms[event.key]);
+      if (rhythms.length < 3) rhythms.push(keyboardRhythms[event.key]);
       character.noteRhythms[selectedNoteIndex] = rhythms;
       saveState();
       renderBoard();

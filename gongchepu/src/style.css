@@ -29,6 +29,8 @@ button { cursor: pointer; }
 .nav-tab { border: 0; border-bottom: 2px solid transparent; background: transparent; color: #777b75; padding: 3px 2px 0; font-size: 15px; letter-spacing: .08em; }
 .nav-tab.active { color: var(--green); border-bottom-color: var(--green); font-weight: 700; }
 .header-actions { margin-left: auto; display: flex; align-items: center; gap: 21px; }
+.archive-header-actions { display: flex; align-items: center; gap: 8px; }
+.import-button { border: 1px solid #d5ddd5; background: #f6faf5; color: #55705b; padding: 10px 12px; border-radius: 5px; font-weight: 600; font-size: 13px; letter-spacing: .04em; }
 .icon-button { border: 0; background: transparent; color: #6d716b; font-size: 20px; padding: 5px; }
 .export-button { border: 1px solid #e8c7b5; background: #fdf9f3; color: #a6582b; padding: 10px 16px; border-radius: 5px; font-weight: 600; font-size: 13px; letter-spacing: .04em; }
 .export-button span { margin-left: 13px; color: #cc8c67; }
@@ -58,6 +60,12 @@ h1 { margin: 0 0 12px; color: var(--green); font-size: clamp(30px, 3.2vw, 43px);
 .mode-button { border: 1px solid #d9ddd6; background: #fbfcf8; color: #65766c; height: 29px; padding: 0 11px; border-radius: 4px; font-size: 12px; }
 .mode-button.active { border-color: #315d47; color: #fff; background: #315d47; }
 .score-button { border: 1px solid #c5d5ca; background: #f3f8f2; color: #285c42; height: 29px; padding: 0 11px; border-radius: 4px; font-size: 12px; }
+.archive-button { border: 1px solid #d6c7b8; background: #fbf6ef; color: #8d6849; height: 29px; padding: 0 11px; border-radius: 4px; font-size: 12px; }
+.archive-panel { margin-bottom: 18px; border: 1px solid #ded6ca; border-radius: 5px; background: #f9f6f0; overflow: hidden; }
+.archive-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border-bottom: 1px solid #e6ded3; color: #8b8278; font: 11px 'DM Mono', monospace; }
+.archive-small-button { border: 1px solid #d7c8b8; background: #fffdfa; color: #85684e; border-radius: 3px; padding: 5px 8px; margin-left: 6px; font-size: 11px; }
+#archive-editor { display: block; width: 100%; min-height: 330px; resize: vertical; border: 0; outline: 0; padding: 15px; background: #fffefa; color: #4e514b; font: 12px/1.75 'DM Mono', 'Noto Serif SC', monospace; white-space: pre; }
+.archive-hint { margin: 0; padding: 8px 12px 10px; color: #a29b91; font-size: 11px; }
 .notation-board { min-height: 237px; overflow-x: auto; border: 1px solid #e1e0d7; border-radius: 5px; background: #fffefa; display: flex; flex-direction: row-reverse; justify-content: flex-start; align-items: flex-start; gap: 13px; padding: 22px 12px 15px; }
 .notation-column { display: flex; flex-direction: column; gap: 10px; min-width: 69px; padding: 0 5px; border-left: 1px solid #ece9df; }
 .notation-column:first-child { border-left: 0; }
@@ -68,8 +76,8 @@ h1 { margin: 0 0 12px; color: var(--green); font-size: clamp(30px, 3.2vw, 43px);
 .notation-board.rhythm-editing .char-annotation { top: 32px; left: calc(50% + 28px); transform: scale(1.65); transform-origin: left top; }
 .notation-board.rhythm-editing .notation-note { font-size: 10px; }
 .notation-board.rhythm-editing .notation-note { left: calc(var(--note-index) * 12px); }
-.notation-board.rhythm-editing .rhythm-stack { left: calc(50% + 15px + var(--note-index) * 12px); }
-.notation-board.rhythm-editing .notation-rhythm { left: -33px; }
+.notation-board.rhythm-editing .rhythm-stack { left: calc(50% + 15px + var(--note-index) * 12px); top: calc(-4px + var(--note-index) * 8px); }
+.notation-board.rhythm-editing .notation-rhythm { left: calc(var(--rhythm-index) * 4px - 33px); top: calc(var(--rhythm-index) * 3px - 4px); }
 .notation-board.rhythm-editing .add-note { font-size: 14px; }
 .notation-cell { position: relative; min-width: 70px; text-align: center; padding: 6px 4px 10px; border-bottom: 1px dashed #eee9df; transition: background .2s; }
 .notation-cell:last-child { border-bottom: 0; }
@@ -80,8 +88,8 @@ h1 { margin: 0 0 12px; color: var(--green); font-size: clamp(30px, 3.2vw, 43px);
 .notation-note, .rhythm-pill { display: block; margin: 0 auto; border: 0; }
 .notation-note { position: absolute; left: calc(var(--note-index) * 7px); top: calc(var(--note-index) * 5px); z-index: calc(10 - var(--note-index)); width: 14px; height: 14px; color: var(--green); background: transparent; font-family: 'Noto Serif SC', serif; font-size: 7px; font-weight: 700; line-height: 14px; text-align: center; padding: 0; transform: rotate(-35deg); transform-origin: center; }
 .notation-note.rhythm-target { color: var(--orange); background: transparent; border-bottom: 0; border-radius: 0; padding: 0; }
-.rhythm-stack { position: absolute; top: -4px; left: calc(50% + 15px + var(--note-index) * 7px); width: 43px; height: 38px; pointer-events: none; }
-.notation-rhythm { position: absolute; left: -33px; top: calc(var(--rhythm-index) * 5px - 4px); border: 0; background: transparent; color: #b7653c; font-family: 'Noto Serif SC', serif; font-size: 8px; line-height: 1; padding: 0; }
+.rhythm-stack { position: absolute; top: calc(-2px + var(--note-index) * 5px); left: calc(50% + 16px + var(--note-index) * 7px); width: 43px; height: 38px; pointer-events: none; }
+.notation-rhythm { position: absolute; left: calc(var(--rhythm-index) * 4px - 33px); top: calc(var(--rhythm-index) * 3px - 4px); border: 0; background: transparent; color: #b7653c; font-family: 'Noto Serif SC', serif; font-size: 8px; line-height: 1; padding: 0; white-space: pre; }
 .notation-rhythm { transform: rotate(-35deg); transform-origin: center; }
 .notation-rhythm.triangle-rhythm { font-size: 4px; transform: translate(2px, 6px) rotate(-35deg); }
 .add-note { border: 0; color: #bc7651; background: transparent; font-size: 11px; line-height: 1; padding: 1px 0 0; }
@@ -89,10 +97,12 @@ h1 { margin: 0 0 12px; color: var(--green); font-size: clamp(30px, 3.2vw, 43px);
 .notation-footer { display: flex; justify-content: space-between; color: #aaa9a0; font-size: 11px; padding-top: 17px; }
 .score-preview { margin-top: 19px; border-top: 1px solid #e3e2d9; padding-top: 17px; }
 .score-heading { display: flex; align-items: baseline; gap: 13px; color: #89918a; font-size: 11px; }
+.score-heading > div { display: flex; align-items: baseline; gap: 13px; }
 .score-heading strong { color: var(--green); font-size: 14px; letter-spacing: .06em; }
 .score-line { display: flex; flex-wrap: wrap; align-items: stretch; align-content: flex-start; gap: 8px; margin-top: 13px; padding: 14px 16px; overflow: hidden; white-space: normal; border: 1px solid #e5e3da; border-radius: 4px; background: #fffefa; color: #3e4b42; font-family: 'DM Mono', monospace; font-size: 18px; letter-spacing: .03em; }
 .score-bar { display: flex; flex: 0 0 auto; align-items: stretch; width: max-content; min-width: 0; border-left: 1px solid #d9d8cf; padding: 0 18px; gap: 18px; break-inside: avoid; page-break-inside: avoid; }
 .score-bar { max-width: 100%; }
+.score-bar.row-end { border-right: 1px solid #d9d8cf; padding-right: 18px; }
 .score-beat { min-height: 52px; display: flex; flex: 0 0 auto; flex-direction: row; align-items: center; justify-content: flex-start; gap: 0; border-right: 0; padding: 8px 0; }
 .score-beat:last-child { border-right: 0; }
 .score-char-group { position: relative; display: inline-flex; flex-direction: row; align-items: center; gap: 0; padding-top: 5px; }
@@ -127,6 +137,7 @@ kbd { border: 1px solid #d5d3ca; border-radius: 3px; padding: 1px 5px; backgroun
   .header-actions { gap: 8px; }
   .icon-button { display: none; }
   .export-button { padding: 8px 10px; }
+  .import-button { padding: 8px 9px; font-size: 12px; }
   .page { padding: 38px 17px 55px; }
   .hero { display: block; margin-bottom: 27px; }
   .hero-badge { margin-top: 18px; }
@@ -135,6 +146,7 @@ kbd { border: 1px solid #d5d3ca; border-radius: 3px; padding: 1px 5px; backgroun
   .mapping-tools .mini-button:not(:first-child)::first-letter { font-size: 15px; }
   .mapping-tools .mode-button { padding: 0 7px; font-size: 11px; }
   .mapping-tools .score-button { padding: 0 7px; font-size: 11px; }
+  .mapping-tools .archive-button { padding: 0 7px; font-size: 11px; }
   .notation-board { gap: 8px; }
   .notation-column { min-width: 67px; }
 }
