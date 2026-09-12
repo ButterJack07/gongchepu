@@ -234,7 +234,7 @@ function exportCombinedArchive() {
 }
 
 function getArchiveForDownload() {
-  return state.numberedArchiveText ? exportCombinedArchive() : exportArchive();
+  return exportArchive();
 }
 
 function numberedValue(note) {
@@ -250,8 +250,14 @@ function numberedArchiveValue(note) {
 
 function exportNumberedArchive(bars) {
   const lines = ['---', 'format: numbered-notation', 'version: 1', 'meter: 2/4', 'source: gongchepu', '---', '', '## 简谱', ''];
+  const lyricSeen = new Set();
   bars.forEach((bar, index) => {
-    const printBeat = (groups) => groups.flatMap((group) => group.notes.map((note) => `${numberedArchiveValue(note)}{${note.char || ''}}`)).join(' ');
+    const printBeat = (groups) => groups.flatMap((group) => group.notes.map((note, noteIndex) => {
+      const shouldShowLyric = noteIndex === 0 && !lyricSeen.has(group.rowId);
+      if (shouldShowLyric) lyricSeen.add(group.rowId);
+      const lyric = shouldShowLyric ? (note.lyric ?? note.char ?? group.char ?? '') : '';
+      return `${numberedArchiveValue(note)}{${lyric}}`;
+    })).join(' ');
     lines.push(`### 小节${index + 1}`, `第一拍: ${printBeat(bar.first)}`, `第二拍: ${printBeat(bar.second)}`, '');
   });
   return lines.join('\n');
@@ -268,7 +274,7 @@ function parseNumberedArchive(source) {
     const groups = [];
     const tokens = match[2].match(/[^\s]+/g) || [];
     tokens.forEach((token) => {
-      const tokenMatch = token.match(/^([^{}]+)\{(.*)\}$/);
+      const tokenMatch = token.match(/^([^{}]+)\{(.*)\}(?:\/d([12]))?$/);
       const rawNumber = tokenMatch ? tokenMatch[1] : token;
       const high = rawNumber.startsWith('^');
       const low = rawNumber.startsWith('_');
@@ -280,6 +286,18 @@ function parseNumberedArchive(source) {
   });
   if (!bars.length) throw new Error('简谱存档没有小节');
   return bars;
+}
+
+function prepareNumberedBarsForView(bars) {
+  return bars.map((bar) => {
+    // An empty lyric is still a real note slot. Never merge it into the
+    // preceding lyric group: the archive already contains the final layout.
+    const copyBeat = (groups) => groups.map((group) => ({
+      ...group,
+      notes: group.notes.map((note) => ({ ...note }))
+    }));
+    return { first: copyBeat(bar.first), second: copyBeat(bar.second) };
+  });
 }
 
 function saveNumberedArchive() {
@@ -341,8 +359,30 @@ function parseArchive(source) {
   return columns;
 }
 
+function parseArchiveLyrics(source) {
+  const lyricsStart = source.indexOf('## 歌词');
+  if (lyricsStart < 0) return '';
+  const lyricsBody = source.slice(lyricsStart + '## 歌词'.length);
+  const sectionEnd = lyricsBody.indexOf('## 工尺谱');
+  const section = sectionEnd < 0 ? lyricsBody : lyricsBody.slice(0, sectionEnd);
+  return section
+    .replace(/\r/g, '')
+    .replace(/^\s*\n/, '')
+    .replace(/\n\s*$/, '')
+    .replace(/---\s*format:\s*numbered-notation[\s\S]*$/i, '')
+    .trim();
+}
+
 function applyArchive(showMessage = false) {
   try {
+    if (archiveEditor.value.includes('format: numbered-notation')) {
+      state.numberedArchiveText = archiveEditor.value.trim();
+      state.numberedOverride = parseNumberedArchive(state.numberedArchiveText);
+      saveState();
+      renderScore();
+      if (showMessage) showToast('简谱存档已同步到第二模块');
+      return;
+    }
     const rows = parseArchive(archiveEditor.value);
     state.rows = rows;
     state.archiveText = archiveEditor.value;
@@ -354,7 +394,8 @@ function applyArchive(showMessage = false) {
       state.numberedArchiveText = '';
       state.numberedOverride = null;
     }
-    state.text = rows.map((column) => column.chars.map((row) => row.char).join('')).join('，');
+    const parsedLyrics = parseArchiveLyrics(archiveEditor.value);
+    state.text = parsedLyrics || rows.map((column) => column.chars.map((row) => row.char).join('')).join('，');
     input.value = state.text;
     saveState();
     renderBoard();
@@ -613,7 +654,7 @@ function legacyRenderScore() {
       });
     });
   });
-  const renderedBars = state.numberedOverride || (bars.length ? bars : [{ first: [], second: [] }]);
+  const renderedBars = prepareNumberedBarsForView(state.numberedOverride || (bars.length ? bars : [{ first: [], second: [] }]));
   if (!state.numberedOverride) {
     state.numberedArchiveText = exportNumberedArchive(renderedBars);
   }
@@ -626,7 +667,7 @@ function legacyRenderScore() {
     <span class="score-char-group" style="--group-size:${groups.length}">
       ${group.notes.map((note, noteIndex) => {
         const divisionLevel = getDivisionLevel(groups, group, noteIndex);
-        const showLyric = note === group.notes[0] && !renderedLyrics.has(group.rowId);
+        const showLyric = noteIndex === 0 && !renderedLyrics.has(group.rowId);
         if (showLyric) renderedLyrics.add(group.rowId);
         return groupedScoreMarkup(note, divisionLevel, showLyric);
       }).join('')}
@@ -736,12 +777,12 @@ function renderScore() {
       if (event.grace) return;
       let group = grouped.find((item) => item.rowId === event.rowId);
       if (!group) { group = { char: event.row.char, rowId: event.rowId, notes: [] }; grouped.push(group); }
-       const model = { eventId: event.eventId, number: gongcheMap[event.note] || '—', gongche: event.note, char: event.row.char, graces: [], isSubdivision: event.dash || event.triangle, hideLyric: event.moveLyric };
+       const model = { eventId: event.eventId, number: gongcheMap[event.note] || '—', gongche: event.note, char: event.row.char, lyric: event.moveLyric ? '' : event.row.char, graces: [], division: event.dash || event.triangle ? 1 : 0, isSubdivision: event.dash || event.triangle, hideLyric: event.moveLyric, frontExtension: event.dash || event.triangle };
        event.model = model;
        if (!group.notes.some((item) => item.eventId === model.eventId)) group.notes.push(model);
        (event.extensions || []).forEach((extension) => {
          if (group.notes.some((item) => item.eventId === extension.eventId)) return;
-         group.notes.push({ eventId: extension.eventId, number: gongcheMap[extension.note] || '—', gongche: extension.note, char: extension.row.char, graces: [], isSubdivision: true, forceLyric: extension.moveLyric });
+           group.notes.push({ eventId: extension.eventId, number: gongcheMap[extension.note] || '—', gongche: extension.note, char: extension.row.char, lyric: extension.row.char, graces: [], division: 1, isSubdivision: true, forceLyric: true, frontExtension: true });
        });
     });
     bar[key] = grouped;
@@ -757,13 +798,25 @@ function renderScore() {
       previousModel = event.model;
     }
   });
-  // Once a numbered archive has been saved, it is the source for the
-  // numbered view. Do not rebuild the visible score from Gongche here.
-  const renderedBars = state.numberedOverride || (bars.length ? bars : [{ first: [], second: [] }]);
+  // Finalize placement into the numbered archive before rendering. The view
+  // consumes these already-positioned bars and does not make lyric-placement
+  // decisions again.
+  if (!state.numberedOverride) {
+    state.numberedArchiveText = exportNumberedArchive(bars);
+    state.numberedOverride = parseNumberedArchive(state.numberedArchiveText);
+  }
+  const renderedBars = prepareNumberedBarsForView(state.numberedOverride || [{ first: [], second: [] }]);
   const renderedLyrics = new Set();
   const renderBeat = (groups) => groups.length ? groups.map((group, groupIndex) => {
     const uniqueNotes = group.notes.filter((note, index, all) => index === all.findIndex((item) => item.eventId === note.eventId));
-    return `<span class="score-char-group">${uniqueNotes.map((note, noteIndex) => { const level = getDivisionLevel(groups, { ...group, notes: uniqueNotes }, noteIndex); const show = note.forceLyric || (!note.hideLyric && noteIndex === 0 && !renderedLyrics.has(group.rowId)); if (show) renderedLyrics.add(group.rowId); return groupedScoreMarkup(note, level, show); }).join('')}</span>`;
+    return `<span class="score-char-group">${uniqueNotes.map((note, noteIndex) => {
+      const level = getDivisionLevel(groups, { ...group, notes: uniqueNotes }, noteIndex);
+      const show = state.numberedOverride
+        ? (noteIndex === 0 && Boolean(note.char))
+        : (noteIndex === 0 && (note.forceLyric || (!note.hideLyric && !renderedLyrics.has(group.rowId))));
+      if (show) renderedLyrics.add(group.rowId);
+      return groupedScoreMarkup(note, level, show);
+    }).join('')}</span>`;
   }).join('') : '<span class="score-empty">·</span>';
   const markup = renderedBars.map((bar) => `<div class="score-bar"><div class="score-beat">${renderBeat(bar.first)}</div><div class="score-beat">${renderBeat(bar.second)}</div></div>`).join('');
   const archiveText = state.numberedArchiveText || exportNumberedArchive(renderedBars);
