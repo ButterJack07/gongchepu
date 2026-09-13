@@ -14,7 +14,14 @@ const state = {
   archiveEditing: false,
   numberedArchiveText: '',
   numberedOverride: null,
-  numberedView: 'score'
+  numberedView: 'score',
+  lyricReplacing: false,
+  viewFlags: { attributes: false, gongche: true, gongcheArchive: false, score: true, scoreArchive: false },
+  gongcheView: 'normal',
+  previousGongcheView: null,
+  paneWidths: { 'lyric-gongche': null, 'gongche-score': null },
+  projectCreated: false,
+  projectMeta: { title: '未命名曲谱', author: '', mode: '一板一眼' }
 };
 
 const notes = ['上', '尺', '工', '凡', '六', '五', '乙', '合', '四', '伍', '亿', '句'];
@@ -82,6 +89,13 @@ function loadSavedState() {
     state.archiveText = typeof saved.archiveText === 'string' ? saved.archiveText : '';
     state.numberedArchiveText = typeof saved.numberedArchiveText === 'string' ? saved.numberedArchiveText : '';
     state.numberedOverride = saved.numberedOverride || null;
+    if (saved.viewFlags && typeof saved.viewFlags === 'object') state.viewFlags = { ...state.viewFlags, ...saved.viewFlags };
+    state.gongcheFit = Boolean(saved.gongcheFit);
+    if (typeof saved.gongcheView === 'string') state.gongcheView = saved.gongcheView;
+    if (typeof saved.previousGongcheView === 'string') state.previousGongcheView = saved.previousGongcheView;
+    if (saved.paneWidths && typeof saved.paneWidths === 'object') {
+      state.paneWidths = { ...state.paneWidths, ...saved.paneWidths };
+    }
   } catch {
     // Directly opened local files may restrict storage access.
   }
@@ -90,7 +104,7 @@ function loadSavedState() {
 function saveState() {
   if (!state.archiveEditing) state.archiveText = exportArchive();
   try {
-    localStorage.setItem(storageKey, JSON.stringify({ text: state.text, rows: state.rows, archiveText: state.archiveText, numberedArchiveText: state.numberedArchiveText, numberedOverride: state.numberedOverride }));
+    localStorage.setItem(storageKey, JSON.stringify({ text: state.text, rows: state.rows, archiveText: state.archiveText, numberedArchiveText: state.numberedArchiveText, numberedOverride: state.numberedOverride, viewFlags: state.viewFlags, gongcheFit: state.gongcheFit, gongcheView: state.gongcheView, previousGongcheView: state.previousGongcheView, paneWidths: state.paneWidths }));
   } catch {
     // Keep editing available even when browser storage is unavailable.
   }
@@ -125,8 +139,14 @@ document.querySelector('#app').innerHTML = `
         <div class="brand-mark">尺</div>
         <div><div class="brand-title">工尺谱 · 新编</div><div class="brand-subtitle">古谱今译，心声可见</div></div>
       </div>
-      <div class="header-actions">
-        <div class="archive-header-actions"><button class="tutorial-button" data-action="tutorial">教程</button><button class="import-button" data-action="archive-upload">导入存档</button><button class="export-button" data-action="export">导出存档 <span>↓</span></button></div>
+       <div class="view-menus">
+         <div class="view-menu-wrap"><button class="view-menu-button" data-action="file-menu">文件</button><div class="view-dropdown file-dropdown" hidden><button data-action="archive-upload">导入存档</button><button data-action="export">导出存档</button><button data-action="new-project">新建曲谱</button></div></div>
+         <div class="view-menu-wrap"><button class="view-menu-button" data-action="notation-menu">打谱</button><div class="view-dropdown" hidden><button data-action="preview-mode"><span>预览模式</span><b></b></button><div class="view-divider"></div><button data-action="replace-lyric"><span>替换歌词</span><b></b></button><button data-action="note-mode"><span>输入音符</span><b></b></button><button data-action="rhythm-mode"><span>输入节奏</span><b></b></button></div></div>
+       <div class="view-menu-wrap"><button class="view-menu-button" data-action="view-menu">视图</button><div class="view-dropdown view-dropdown-list" hidden><button data-view="attributes"><span>属性视图</span><b>✓</b></button><div class="view-divider"></div><button data-action="gongche-view" data-gongche-view="normal"><span>工尺谱视图</span><b></b></button><button data-action="gongche-view" data-gongche-view="fit"><span>工尺谱自适应视图</span><b></b></button><button data-action="gongche-view" data-gongche-view="single"><span>工尺谱单字视图</span><b></b></button><div class="view-divider"></div><button data-view="gongcheArchive"><span>工尺存档视图</span><b>✓</b></button><div class="view-divider"></div><button data-view="score"><span>简谱视图</span><b>✓</b></button><button data-view="scoreArchive"><span>简谱存档视图</span><b>✓</b></button></div></div>
+       </div>
+       <div class="command-group"><button class="score-button" data-action="convert">转写简谱</button><button class="mini-button" data-action="undo">↶</button><button class="mini-button" data-action="redo">↷</button></div>
+       <div class="header-actions">
+         <div class="archive-header-actions"><button class="tutorial-button" data-action="tutorial">教程</button></div>
       </div>
     </header>
     <div class="tutorial-backdrop" id="tutorial-backdrop" hidden>
@@ -145,48 +165,51 @@ document.querySelector('#app').innerHTML = `
         <div class="tutorial-note">提示：工尺存档是源数据；简谱存档可以独立微调，不会反向修改工尺谱。</div>
       </section>
     </div>
+    <div class="project-backdrop" id="project-backdrop" hidden>
+      <section class="project-card" role="dialog" aria-modal="true" aria-label="新建曲谱">
+        <button class="tutorial-close" data-action="project-close" aria-label="关闭">×</button>
+        <div class="tutorial-kicker">NEW SCORE</div>
+        <div class="project-step-indicator"><b class="active">01</b><i></i><b>02</b></div>
+        <section class="project-page" data-project-page="1">
+          <h2>新建曲谱</h2><p class="tutorial-lead">先填写曲谱基本信息。</p>
+          <label class="project-field">曲谱名称<input id="project-title" value="未命名曲谱" /></label>
+          <label class="project-field">作者（可选）<input id="project-author" /></label>
+          <label class="project-field">模式<select id="project-mode"><option>一板一眼</option></select></label>
+          <button class="project-next" data-action="project-next">下一步</button>
+        </section>
+        <section class="project-page" data-project-page="2" hidden>
+          <h2>输入歌词</h2><p class="tutorial-lead">歌词确定后将不能再整体修改，只能使用“替换歌词”逐字替换。</p>
+          <textarea id="project-lyrics" class="project-lyrics" placeholder="请输入歌词"></textarea>
+          <button class="project-next" data-action="project-create">创建曲谱</button>
+        </section>
+      </section>
+    </div>
 
     <main class="page">
       <section class="editor-card">
-        <div class="card-header">
-          <div class="step-label"><span>01</span> 输入歌词</div>
-          <div class="text-tools"><span id="char-count">${[...state.text].length} 字</span><button class="clear-button" data-action="clear">清空</button></div>
+        <div class="workspace-panes" id="workspace-panes">
+          <section class="workspace-pane lyric-pane" data-pane="lyric">
+            <div class="pane-title"><strong>歌词属性</strong><div class="text-tools"><span id="char-count">${[...state.text].length} 字</span></div></div>
+            <div class="lyric-attributes" id="lyric-attributes"></div>
+            <input id="lyric-input" class="lyric-replacement-input" spellcheck="false" aria-label="替换歌词" placeholder="点选字后替换" disabled />
+          </section>
+          <div class="pane-divider" data-divider="lyric-gongche" role="separator" aria-label="调整歌词和工尺谱宽度"></div>
+          <section class="workspace-pane gongche-pane" data-pane="gongche">
+      <div class="pane-title"><strong>编排工尺谱</strong></div>
+            <section class="archive-panel" id="archive-panel" hidden>
+              <div class="archive-toolbar"><span>Gongche Markdown · 编辑后点击保存修改</span><button class="archive-small-button" data-action="archive-import">保存修改</button></div>
+              <textarea id="archive-editor" spellcheck="false" aria-label="Gongche Markdown 存档编辑器"></textarea>
+              <p class="archive-hint">像 LaTeX 一样编辑存档；每个工尺最多三个节奏，格式错误会保留在编辑器中。</p>
+            </section>
+            <input id="archive-file-input" type="file" accept=".txt,text/plain" hidden />
+            <div class="notation-board" id="notation-board"></div>
+          </section>
+          <div class="pane-divider" data-divider="gongche-score" role="separator" aria-label="调整工尺谱和简谱宽度"></div>
+  <section class="workspace-pane score-pane" data-pane="score">
+            <div class="score-preview" id="score-preview" hidden></div>
+          </section>
         </div>
-        <div class="text-entry-wrap">
-          <textarea id="lyric-input" spellcheck="false" aria-label="歌词输入">${state.text}</textarea>
-          <div class="textarea-hint">输入文字后，在下方为每个字添加工尺字符</div>
-        </div>
-
-        <div class="card-header mapping-header">
-          <div class="step-label"><span>02</span> 编排工尺谱</div>
-          <div class="mapping-tools">
-            <button class="mode-button" data-action="note-mode">输入音符</button>
-            <button class="mode-button" data-action="rhythm-mode">输入节奏</button>
-            <button class="score-button" data-action="convert">转写简谱</button>
-            <button class="archive-button" data-action="archive-toggle">工尺存档</button>
-            <button class="mini-button" data-action="undo">↶</button>
-            <button class="mini-button" data-action="redo">↷</button>
-          </div>
-        </div>
-        <section class="archive-panel" id="archive-panel" hidden>
-          <div class="archive-toolbar">
-            <span>Gongche Markdown · 编辑后点击保存修改</span>
-            <button class="archive-small-button" data-action="archive-import">保存修改</button>
-          </div>
-          <textarea id="archive-editor" spellcheck="false" aria-label="Gongche Markdown 存档编辑器"></textarea>
-          <p class="archive-hint">像 LaTeX 一样编辑存档；每个工尺最多三个节奏，格式错误会保留在编辑器中。</p>
-        </section>
-        <section class="archive-panel numbered-archive-panel" id="numbered-archive-panel" hidden>
-          <div class="archive-toolbar"><span>Numbered Markdown · 独立简谱数据</span><button class="archive-small-button" data-action="numbered-save">保存修改</button></div>
-          <textarea id="numbered-archive-editor" spellcheck="false" aria-label="简谱存档编辑器"></textarea>
-          <p class="archive-hint">编辑这里不会修改工尺存档；简谱视图会根据本存档重新渲染。</p>
-        </section>
-        <input id="archive-file-input" type="file" accept=".txt,text/plain" hidden />
-        <div class="notation-board" id="notation-board"></div>
-        <div class="notation-footer"><span><i class="status-dot"></i> 已自动保存</span><span>点击右侧工尺可切换，点击 ＋ 可继续添加</span></div>
-        <div class="score-preview" id="score-preview" hidden></div>
       </section>
-      <footer class="footer-note"><span>◒</span> 工尺谱 · 传承千年的记谱方式</footer>
     </main>
     <div class="toast" id="toast"></div>
   </div>
@@ -201,14 +224,129 @@ const archiveEditor = document.querySelector('#archive-editor');
 const archiveFileInput = document.querySelector('#archive-file-input');
 const tutorialBackdrop = document.querySelector('#tutorial-backdrop');
 const tutorialDetailPanel = document.querySelector('#tutorial-detail-panel');
-const numberedArchivePanel = document.querySelector('#numbered-archive-panel');
-const numberedArchiveEditor = document.querySelector('#numbered-archive-editor');
+const projectBackdrop = document.querySelector('#project-backdrop');
+const lyricAttributes = document.querySelector('#lyric-attributes');
+const workspacePanes = document.querySelector('#workspace-panes');
+let numberedArchivePanel = null;
+let numberedArchiveEditor = null;
+
+function syncViewFlags() {
+  if (state.viewFlags.gongcheArchive) {
+    state.viewFlags.gongche = false;
+    state.gongcheView = 'archive';
+  }
+  const lyricPane = document.querySelector('[data-pane="lyric"]');
+  const gongchePane = document.querySelector('[data-pane="gongche"]');
+  const scorePane = document.querySelector('[data-pane="score"]');
+  const showGongche = state.viewFlags.gongche || state.viewFlags.gongcheArchive;
+  const showScore = state.viewFlags.score || state.viewFlags.scoreArchive;
+  lyricPane.hidden = !state.viewFlags.attributes;
+  gongchePane.hidden = !showGongche;
+  scorePane.hidden = !showScore;
+  if (showScore && document.querySelector('#score-preview').hidden) renderScore();
+  document.querySelector('[data-divider="lyric-gongche"]').hidden = !state.viewFlags.attributes || !showGongche;
+  document.querySelector('[data-divider="gongche-score"]').hidden = !showGongche || !showScore;
+  archivePanel.hidden = !state.viewFlags.gongcheArchive;
+  board.hidden = state.viewFlags.gongcheArchive;
+  document.querySelector('.notation-footer')?.toggleAttribute('hidden', state.viewFlags.gongcheArchive);
+  document.querySelectorAll('[data-view]').forEach((button) => {
+    button.classList.toggle('checked', Boolean(state.viewFlags[button.dataset.view]));
+    button.querySelector('b').textContent = state.viewFlags[button.dataset.view] ? '✓' : '';
+  });
+  board.classList.toggle('fit-enabled', Boolean(state.gongcheFit));
+  document.querySelectorAll('[data-gongche-view]').forEach((button) => {
+    const checked = state.viewFlags.gongche && state.gongcheView === button.dataset.gongcheView;
+    button.classList.toggle('checked', checked);
+    button.querySelector('b').textContent = checked ? '✓' : '';
+  });
+}
+
+function syncNotationMenu() {
+  const activeAction = state.lyricReplacing ? 'replace-lyric' : state.activeTool === 'note' ? 'note-mode' : state.activeTool === 'rhythm' ? 'rhythm-mode' : 'preview-mode';
+  ['preview-mode', 'replace-lyric', 'note-mode', 'rhythm-mode'].forEach((action) => {
+    const button = document.querySelector(`[data-action="${action}"]`);
+    if (!button) return;
+    const checked = action === activeAction;
+    button.classList.toggle('checked', checked);
+    button.querySelector('b').textContent = checked ? '✓' : '';
+  });
+}
+
+function closeMenus() {
+  document.querySelectorAll('.view-dropdown').forEach((menu) => { menu.hidden = true; });
+}
+
+function applyPaneWidths() {
+  document.querySelectorAll('[data-divider]').forEach((divider) => {
+    const width = Number(state.paneWidths?.[divider.dataset.divider]);
+    const leftPane = divider.previousElementSibling;
+    if (!leftPane || !Number.isFinite(width) || width <= 0) return;
+    leftPane.style.flex = `0 0 ${width}px`;
+  });
+}
+
+document.querySelectorAll('[data-divider]').forEach((divider) => {
+  divider.addEventListener('pointerdown', (event) => {
+    event.preventDefault();
+    divider.classList.add('dragging');
+    const startX = event.clientX;
+    const leftPane = divider.previousElementSibling;
+    const rightPane = divider.nextElementSibling;
+    const startLeft = leftPane.getBoundingClientRect().width;
+    const startRight = rightPane.getBoundingClientRect().width;
+    const move = (moveEvent) => {
+      const delta = moveEvent.clientX - startX;
+      const nextLeft = Math.max(180, startLeft + delta);
+      const nextRight = Math.max(300, startRight - delta);
+      leftPane.style.flex = `0 0 ${nextLeft}px`;
+      rightPane.style.flex = '1 1 auto';
+    };
+    const stop = () => {
+      divider.classList.remove('dragging');
+      state.paneWidths[divider.dataset.divider] = Math.round(leftPane.getBoundingClientRect().width);
+      saveState();
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', stop);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', stop);
+  });
+});
+
+function ensureWorkspaceDefaults() {
+  if (!state.rows.length) state.rows = buildRows(state.text);
+  input.value = state.text;
+  renderBoard();
+  document.querySelector('#char-count').textContent = `${[...state.text].length} 字`;
+}
 
 function showToast(message) {
   toast.textContent = message;
   toast.classList.add('show');
   clearTimeout(showToast.timer);
   showToast.timer = setTimeout(() => toast.classList.remove('show'), 2200);
+}
+
+function renderLyricAttributes() {
+  if (!lyricAttributes) return;
+  const row = getCharacterAt(selectedIndex);
+  if (!row) {
+    lyricAttributes.innerHTML = '<div class="attribute-empty">点选 02 工尺谱中的歌词字，即可查看和修改属性。</div>';
+    return;
+  }
+  lyricAttributes.innerHTML = `
+    <div class="attribute-preview">
+      <span class="attribute-caption">当前唱字</span>
+      <strong>${row.char || '□'}</strong>
+      <small>${row.notes.length ? `${row.notes.length} 个工尺` : '尚未录入工尺'}</small>
+    </div>
+    <label class="attribute-field">歌词字<input data-attribute-char value="${row.char || ''}" maxlength="1" /></label>
+    <div class="attribute-section"><span>工尺与节奏</span>${row.notes.length ? row.notes.map((note, noteIndex) => `
+      <div class="attribute-note-row">
+        <code>[${note}@${(row.noteRhythms[noteIndex] || []).map((rhythm) => rhythm === '△' ? '<' : rhythm === '—' ? '-' : rhythm).join('')}]</code>
+      </div>
+    `).join('') : '<i class="attribute-empty-note">在“输入音符”模式录入工尺</i>'}</div>
+  `;
 }
 
 function escapeArchiveChar(char) {
@@ -345,6 +483,7 @@ function prepareNumberedBarsForView(bars) {
 }
 
 function saveNumberedArchive() {
+  if (!numberedArchiveEditor) return;
   try {
     state.numberedOverride = parseNumberedArchive(numberedArchiveEditor.value);
     state.numberedArchiveText = numberedArchiveEditor.value;
@@ -494,11 +633,13 @@ function convertToScore() {
 
 function renderBoard() {
   board.classList.toggle('rhythm-editing', state.activeTool === 'rhythm');
+  board.classList.toggle('single-view', state.gongcheView === 'single');
+  board.classList.toggle('fit-enabled', state.gongcheView === 'fit');
   const renderColumns = state.rows.map((column, columnIndex) => ({
     column,
     columnIndex,
     chars: column.chars.map((row, charIndex) => ({ row, charIndex }))
-      .filter(({ charIndex }) => state.activeTool !== 'rhythm' || flattenIndex(columnIndex, charIndex) === selectedIndex)
+      .filter(({ charIndex }) => (state.activeTool !== 'rhythm' && state.gongcheView !== 'single') || flattenIndex(columnIndex, charIndex) === selectedIndex)
   })).filter(({ chars }) => chars.length);
   board.innerHTML = state.rows.length ? renderColumns.map(({ column, columnIndex, chars }) => `
     <div class="notation-column" data-column="${columnIndex}">
@@ -513,7 +654,26 @@ function renderBoard() {
       `).join('')}
     </div>
   `).join('') : '<div class="empty-board">先输入一段文字，开始编排你的旋律</div>';
+  renderLyricAttributes();
+  requestAnimationFrame(fitGongcheBoard);
   syncArchiveFromState();
+}
+
+function fitGongcheBoard() {
+  if (state.gongcheView !== 'fit') {
+    board.style.removeProperty('--gongche-scale');
+    return;
+  }
+  const availableHeight = board.clientHeight;
+  const columns = [...board.querySelectorAll('.notation-column')];
+  const tallestColumn = Math.max(0, ...columns.map((column) => column.scrollHeight));
+  if (!tallestColumn || !availableHeight) return;
+  const scale = Math.min(1, Math.max(.45, (availableHeight - 36) / tallestColumn));
+  if (board.dataset.gongcheScale !== scale.toFixed(3)) {
+    board.dataset.gongcheScale = scale.toFixed(3);
+    board.style.setProperty('--gongche-scale', scale.toFixed(3));
+  }
+  board.classList.toggle('fit-height', scale < .99);
 }
 
 function syncToolButtons() {
@@ -759,7 +919,7 @@ function legacyRenderScore() {
   }
   if (!state.numberedOverride) {
     state.numberedArchiveText = exportNumberedArchive(renderedBars);
-    if (!numberedArchivePanel.hidden && document.activeElement !== numberedArchiveEditor) numberedArchiveEditor.value = state.numberedArchiveText;
+    if (numberedArchivePanel && !numberedArchivePanel.hidden && document.activeElement !== numberedArchiveEditor) numberedArchiveEditor.value = state.numberedArchiveText;
   }
   const renderedLyrics = new Set();
   const renderBeat = (groups) => groups.length ? groups.map((group, groupIndex) => `
@@ -940,8 +1100,10 @@ function renderScore() {
   };
   const markup = renderedBars.map((bar) => `<div class="score-bar"><div class="score-beat">${renderBeat(bar.first)}</div><div class="score-beat">${renderBeat(bar.second)}</div></div>`).join('');
   const archiveText = state.numberedArchiveText || exportNumberedArchive(renderedBars);
-  const archiveView = state.numberedView === 'archive';
-  preview.innerHTML = `<div class="score-module-title"><div class="score-module-heading"><span>03</span><strong>简谱</strong><small>由简谱存档渲染</small></div><div class="score-view-actions"><button class="archive-small-button" data-action="toggle-numbered-view">${archiveView ? '简谱视图' : '简谱存档视图'}</button></div></div>${archiveView ? `<section class="score-archive-view"><textarea id="score-archive-editor" spellcheck="false">${archiveText}</textarea><button class="archive-small-button" data-action="save-score-archive">保存简谱存档修改</button></section>` : `<div class="score-line">${markup}</div>`}`;
+  const archiveView = state.viewFlags.scoreArchive;
+  preview.innerHTML = `<div class="score-module-title"><div class="score-module-heading"><strong>简谱</strong><small>由简谱存档渲染</small></div></div>${archiveView ? `<section class="score-archive-view"><div class="archive-toolbar"><span>Numbered Markdown · 编辑后点击保存修改</span><button class="archive-small-button" data-action="save-score-archive">保存修改</button></div><textarea id="score-archive-editor" spellcheck="false">${archiveText}</textarea><p class="archive-hint">修改简谱存档不会反向改动工尺谱。</p></section>` : `<div class="score-line">${markup}</div>`}`;
+  numberedArchivePanel = preview.querySelector('.score-archive-view');
+  numberedArchiveEditor = preview.querySelector('#score-archive-editor');
   preview.hidden = false;
   if (!archiveView) requestAnimationFrame(markScoreRowEnds);
 }
@@ -1042,9 +1204,87 @@ function syncRows() {
 }
 
 input.addEventListener('input', (event) => {
-  state.text = event.target.value;
-  syncRows();
+  if (!state.lyricReplacing) return;
+  const row = getCharacterAt(selectedIndex);
+  if (!row) return;
+  row.char = event.target.value.slice(-1) || row.char;
+  state.text = getAllCharacters().map((item) => item.char).join('');
+  saveState();
+  renderBoard();
 });
+
+lyricAttributes.addEventListener('input', (event) => {
+  if (!event.target.matches('[data-attribute-char]')) return;
+  const row = getCharacterAt(selectedIndex);
+  if (!row) return;
+  row.char = event.target.value.slice(-1) || row.char;
+  event.target.value = row.char;
+  state.text = getAllCharacters().map((item) => item.char).join('');
+  saveState();
+  renderBoard();
+});
+
+function syncLyricsWithoutTouchingNotes() {
+  const oldChars = [...state.text].filter((char) => !separators.test(char) && !/\s/.test(char));
+  const newChars = [...input.value].filter((char) => !separators.test(char) && !/\s/.test(char));
+  const existing = getAllCharacters();
+  let prefix = 0;
+  while (prefix < oldChars.length && prefix < newChars.length && oldChars[prefix] === newChars[prefix]) prefix += 1;
+  let oldEnd = oldChars.length;
+  let newEnd = newChars.length;
+  while (oldEnd > prefix && newEnd > prefix && oldChars[oldEnd - 1] === newChars[newEnd - 1]) {
+    oldEnd -= 1;
+    newEnd -= 1;
+  }
+  const removedCount = oldEnd - prefix;
+  const insertedCount = newEnd - prefix;
+  const makeEmptyRow = (index) => ({ id: `lyric-${Date.now()}-${index}`, char: '', notes: [], noteRhythms: [] });
+  const newText = input.value;
+  const charsOnly = [...newText].filter((char) => !separators.test(char) && !/\s/.test(char));
+  const items = [];
+  const deletionBlanks = Math.max(0, removedCount - insertedCount);
+
+  // Keep suffix slots tied to their original positions. Deleted characters
+  // leave blank slots; inserted characters get fresh empty slots. Existing
+  // notes never slide onto a neighboring lyric.
+  charsOnly.forEach((char, index) => {
+    if (index === prefix) {
+      for (let blank = 0; blank < deletionBlanks; blank += 1) items.push(makeEmptyRow(prefix + blank));
+    }
+    const oldIndex = index < prefix
+      ? index
+      : index < newEnd
+        ? -1
+        : index + removedCount - insertedCount;
+    const row = oldIndex >= 0 ? existing[oldIndex] : makeEmptyRow(index);
+    row.char = char;
+    items.push(row);
+  });
+  if (deletionBlanks && charsOnly.length === prefix) {
+    for (let blank = 0; blank < deletionBlanks; blank += 1) items.push(makeEmptyRow(prefix + blank));
+  }
+
+  // Rebuild only the visual sentence columns; each row object (and therefore
+  // its notes/rhythms) remains the preserved slot selected above.
+  const sentences = newText.split(separators).map((sentence) => [...sentence.replace(/\s/g, '')]).filter(Boolean);
+  const columns = [];
+  let cursor = 0;
+  sentences.forEach((chars, columnIndex) => {
+    const columnRows = [];
+    let realChars = 0;
+    while (realChars < chars.length && cursor < items.length) {
+      const row = items[cursor++];
+      columnRows.push(row);
+      if (row.char) realChars += 1;
+    }
+    columns.push({ id: `lyrics-${columnIndex}`, chars: columnRows });
+  });
+  state.rows = columns.length ? columns : [{ id: 'lyrics-0', chars: items }];
+  state.text = newText;
+  saveState();
+  renderBoard();
+  document.querySelector('#char-count').textContent = `${[...state.text].length} 字`;
+}
 
 archiveFileInput.addEventListener('change', async (event) => {
   const file = event.target.files?.[0];
@@ -1075,6 +1315,9 @@ board.addEventListener('click', (event) => {
   const row = column.chars[charIndex];
   if (!noteButton) {
     selectCell(columnIndex, charIndex);
+    if (state.lyricReplacing) {
+      showToast('请在左侧“歌词字”属性框中替换当前字');
+    }
     return;
   }
   if (noteButton) {
@@ -1104,7 +1347,91 @@ document.addEventListener('click', (event) => {
     return;
   }
   const action = event.target.closest('[data-action]')?.dataset.action;
+  const attributeNote = event.target.closest('[data-attribute-note]');
+  const attributeRhythm = event.target.closest('[data-attribute-rhythm]');
+  if (attributeNote) {
+    const row = getCharacterAt(selectedIndex);
+    const noteIndex = Number(attributeNote.dataset.attributeNote);
+    const current = notes.indexOf(baseGongche(row.notes[noteIndex]));
+    row.notes[noteIndex] = notes[(current + 1) % notes.length];
+    saveState();
+    renderBoard();
+    return;
+  }
+  if (attributeRhythm) {
+    const [noteIndex, rhythmIndex] = attributeRhythm.dataset.attributeRhythm.split(':').map(Number);
+    const row = getCharacterAt(selectedIndex);
+    const rhythmList = row.noteRhythms[noteIndex] || [];
+    rhythmList[rhythmIndex] = keyboardRhythms[String((Number(Object.keys(keyboardRhythms).find((key) => keyboardRhythms[key] === rhythmList[rhythmIndex]) || 1) % 4) + 1)] || '、';
+    row.noteRhythms[noteIndex] = rhythmList;
+    saveState();
+    renderBoard();
+    return;
+  }
   if (!action) return;
+  event.stopPropagation();
+  if (action === 'file-menu' || action === 'notation-menu' || action === 'view-menu') {
+    const menu = event.target.closest('.view-menu-wrap')?.querySelector('.view-dropdown');
+    document.querySelectorAll('.view-dropdown').forEach((item) => { if (item !== menu) item.hidden = true; });
+    if (menu) menu.hidden = !menu.hidden;
+    return;
+  }
+  if (action === 'gongche-view') {
+    if (state.activeTool === 'rhythm') {
+      state.activeTool = null;
+      syncToolButtons();
+    }
+    const nextView = event.target.closest('[data-gongche-view]').dataset.gongcheView;
+    const isSameView = state.viewFlags.gongche && state.gongcheView === nextView;
+    state.gongcheView = nextView;
+    if (state.gongcheView === 'single') {
+      selectedIndex = Math.max(0, Math.min(selectedIndex, totalCharacters() - 1));
+      selectedNoteIndex = 0;
+    }
+    state.viewFlags.gongche = !isSameView;
+    state.gongcheFit = state.viewFlags.gongche && state.gongcheView === 'fit';
+    state.viewFlags.gongcheArchive = false;
+    fitGongcheBoard();
+    saveState();
+    syncViewFlags();
+    renderBoard();
+    return;
+  }
+  if (action === 'preview-mode') {
+    state.activeTool = null;
+    state.lyricReplacing = false;
+    syncToolButtons();
+    syncNotationMenu();
+    closeMenus();
+    showToast('已进入预览模式');
+    return;
+  }
+  if (action === 'new-project') {
+    projectBackdrop.hidden = false;
+    projectBackdrop.querySelector('[data-project-page="1"]').hidden = false;
+    projectBackdrop.querySelector('[data-project-page="2"]').hidden = true;
+  }
+  if (action === 'project-close') projectBackdrop.hidden = true;
+  if (action === 'project-next') {
+    projectBackdrop.querySelector('[data-project-page="1"]').hidden = true;
+    projectBackdrop.querySelector('[data-project-page="2"]').hidden = false;
+  }
+  if (action === 'project-create') {
+    state.projectMeta = { title: document.querySelector('#project-title').value || '未命名曲谱', author: document.querySelector('#project-author').value, mode: document.querySelector('#project-mode').value };
+    state.text = document.querySelector('#project-lyrics').value;
+    state.rows = buildRows(state.text);
+    state.projectCreated = true;
+    input.value = state.text;
+    projectBackdrop.hidden = true;
+    saveState();
+    renderBoard();
+    document.querySelector('#char-count').textContent = `${[...state.text].length} 字`;
+    showToast('曲谱已创建');
+  }
+  if (event.target.closest('[data-lyric-index]')) {
+    selectedIndex = Number(event.target.closest('[data-lyric-index]').dataset.lyricIndex);
+    selectCharacter(selectedIndex);
+  }
   if (action === 'clear') {
     input.value = '';
     state.text = '';
@@ -1117,26 +1444,71 @@ document.addEventListener('click', (event) => {
   }
   if (action === 'note-mode' || action === 'rhythm-mode') {
     const nextTool = action === 'note-mode' ? 'note' : 'rhythm';
+    const wasRhythm = state.activeTool === 'rhythm';
     state.activeTool = state.activeTool === nextTool ? null : nextTool;
+    if (state.activeTool === 'note' && !state.viewFlags.gongche) {
+      state.viewFlags.gongche = true;
+      state.viewFlags.gongcheArchive = false;
+      state.gongcheView = 'fit';
+      state.gongcheFit = true;
+    }
+    if (state.activeTool === 'rhythm' && !state.viewFlags.gongche) {
+      state.viewFlags.gongche = true;
+      state.viewFlags.gongcheArchive = false;
+      state.gongcheView = 'single';
+      state.gongcheFit = false;
+    }
+    if (nextTool === 'rhythm' && state.activeTool === 'rhythm' && state.gongcheView !== 'single') {
+      state.previousGongcheView = state.gongcheView;
+      state.gongcheView = 'single';
+    }
+    if (wasRhythm && state.activeTool !== 'rhythm' && state.previousGongcheView !== null && state.gongcheView === 'single') {
+      state.gongcheView = state.previousGongcheView || 'normal';
+      state.previousGongcheView = null;
+    }
     syncToolButtons();
+    syncNotationMenu();
+    closeMenus();
+    syncViewFlags();
     renderBoard();
+    if (state.activeTool === 'note' && state.gongcheView === 'single') showToast('当前单字已选中，可直接输入工尺');
+  }
+  if (action === 'replace-lyric') {
+    state.lyricReplacing = !state.lyricReplacing;
+    if (state.lyricReplacing && !state.viewFlags.attributes) {
+      state.viewFlags.attributes = true;
+      state.viewFlags.gongche = false;
+      state.viewFlags.gongcheArchive = false;
+      syncViewFlags();
+    }
+    document.querySelector('[data-action="replace-lyric"]').classList.toggle('active', state.lyricReplacing);
+    if (state.lyricReplacing) state.activeTool = null;
+    syncToolButtons();
+    syncNotationMenu();
+    closeMenus();
+    if (state.lyricReplacing) {
+      renderLyricAttributes();
+      document.querySelector('[data-attribute-char]')?.focus();
+      document.querySelector('[data-attribute-char]')?.select();
+      showToast('当前单字已选中，可直接替换歌词');
+    }
   }
   if (action === 'convert') {
     convertToScore();
   }
   if (action === 'archive-toggle') {
-    archivePanel.hidden = !archivePanel.hidden;
-    if (!archivePanel.hidden) archiveEditor.value = state.archiveText || exportArchive();
-  }
-  if (action === 'numbered-toggle') {
-    numberedArchivePanel.hidden = !numberedArchivePanel.hidden;
-    if (!numberedArchivePanel.hidden) {
-      if (!state.numberedArchiveText) renderScore();
-      numberedArchiveEditor.value = state.numberedArchiveText;
+    state.viewFlags.gongcheArchive = !state.viewFlags.gongcheArchive;
+    if (state.viewFlags.gongcheArchive) {
+      state.viewFlags.gongche = false;
+      state.gongcheView = 'archive';
+      archiveEditor.value = state.archiveText || exportArchive();
+    } else {
+      state.gongcheView = 'normal';
     }
+    syncViewFlags();
+    saveState();
   }
   if (action === 'numbered-save') saveNumberedArchive();
-  if (action === 'toggle-numbered-view') toggleNumberedView();
   if (action === 'save-score-archive') saveScoreArchiveFromView();
   if (action === 'archive-copy') copyArchive();
   if (action === 'archive-download') downloadArchive();
@@ -1154,6 +1526,46 @@ document.addEventListener('click', (event) => {
   if (action === 'undo' || action === 'redo') showToast(action === 'undo' ? '已撤销上一步操作' : '已恢复上一步操作');
 });
 
+document.addEventListener('click', (event) => {
+  const viewButton = event.target.closest('[data-view]');
+  if (!viewButton) return;
+  const view = viewButton.dataset.view;
+  if (view === 'gongcheArchive' && state.activeTool === 'rhythm') {
+    state.activeTool = null;
+    state.previousGongcheView = null;
+    syncToolButtons();
+  }
+  state.viewFlags[view] = !state.viewFlags[view];
+  if (view === 'score' || view === 'scoreArchive') {
+    if (state.viewFlags[view]) {
+      state.viewFlags.score = view === 'score';
+      state.viewFlags.scoreArchive = view === 'scoreArchive';
+    }
+    if (!state.viewFlags.score && !state.viewFlags.scoreArchive) state.viewFlags.score = false;
+  }
+  if (view === 'attributes' || view === 'gongcheArchive') {
+    if (state.viewFlags[view]) {
+      if (view === 'attributes') state.viewFlags.attributes = true;
+      if (view === 'gongcheArchive') {
+        state.viewFlags.gongcheArchive = true;
+        state.viewFlags.gongche = false;
+      }
+    }
+  }
+  if (view === 'gongcheArchive' && state.viewFlags[view]) {
+    state.gongcheView = 'archive';
+  }
+  if (view === 'gongche' && state.viewFlags[view]) state.viewFlags.gongcheArchive = false;
+  if (view === 'gongcheArchive' && !state.viewFlags[view]) {
+    state.gongcheView = 'normal';
+    state.viewFlags.gongche = false;
+  }
+  syncViewFlags();
+  saveState();
+  renderBoard();
+  renderScore();
+});
+
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && tutorialBackdrop && !tutorialBackdrop.hidden) {
     tutorialBackdrop.hidden = true;
@@ -1161,7 +1573,8 @@ document.addEventListener('keydown', (event) => {
 });
 
 document.addEventListener('keydown', (event) => {
-  if (event.target.matches('textarea, input')) return;
+  if (event.target.matches('textarea, input') && event.target !== input) return;
+  if (event.target === input && !state.lyricReplacing) return;
   if (event.key === 'Shift') {
     shiftHeld = true;
     return;
@@ -1171,6 +1584,7 @@ document.addEventListener('keydown', (event) => {
     return;
   }
   if (event.key === 'Backspace' || event.key === 'Delete') {
+    if (event.target === input && state.lyricReplacing) return;
     event.preventDefault();
     keyboardBuffer = '';
     const character = getCharacterAt(selectedIndex);
@@ -1266,6 +1680,9 @@ document.addEventListener('keyup', (event) => {
   if (event.key === 'CapsLock') capsLockHeld = false;
 });
 
-renderBoard();
+ensureWorkspaceDefaults();
+applyPaneWidths();
 syncToolButtons();
+syncViewFlags();
+syncNotationMenu();
 convertButton?.addEventListener('click', convertToScore);
