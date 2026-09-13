@@ -30,8 +30,7 @@ const keyboardRhythms = {
   '1': '、',
   '2': '。',
   '3': '—',
-  '4': '△',
-  '0': ''
+  '4': '△'
 };
 
 function baseGongche(note) {
@@ -165,7 +164,6 @@ document.querySelector('#app').innerHTML = `
             <button class="mode-button" data-action="rhythm-mode">输入节奏</button>
             <button class="score-button" data-action="convert">转写简谱</button>
             <button class="archive-button" data-action="archive-toggle">工尺存档</button>
-            <button class="numbered-archive-button" data-action="numbered-toggle">简谱存档</button>
             <button class="mini-button" data-action="undo">↶</button>
             <button class="mini-button" data-action="redo">↷</button>
           </div>
@@ -1148,8 +1146,8 @@ document.addEventListener('click', (event) => {
   if (action === 'tutorial-notes' || action === 'tutorial-rhythms') {
     tutorialDetailPanel.hidden = false;
     tutorialDetailPanel.innerHTML = action === 'tutorial-notes'
-      ? '<strong>工尺输入法</strong><br>shang 上 · chi 尺 · gong 工 · fan 凡 · liu 六 · wu 五 · yi 乙 · he 合 · si 四 · ye 一<br><br>按住 CapsLock 输入允许的中音高音，按住 Shift 输入允许的低音。按 `-` 输入后倚音 √。'
-      : '<strong>节奏输入法</strong><br>1 = 、（第一拍） · 2 = 。（第二拍） · 3 = —（顿号升级） · 4 = △（句号升级） · 0 = 清除<br><br>每个工尺最多三个节奏，Backspace / Delete 删除最后一个节奏。';
+      ? '<strong>工尺输入法</strong><br>shang 上 · chi 尺 · gong 工 · fan 凡 · liu 六 · wu 五 · yi 乙 · he 合 · si 四 · ye 一<br><br>按住 CapsLock 输入高音，按住 Shift 输入低音。按 `-` 输入豁腔 √。'
+      : '<strong>节奏输入法</strong><br>1 = 、（正板） · 2 = 。（正眼） · 3 = —（腰板） · 4 = △（腰眼）<br><br>每个工尺最多三个节奏，Backspace / Delete 删除最后一个节奏。';
   }
   if (action === 'export') downloadArchive();
   if (action === 'library') { showToast('曲谱库功能正在整理中'); }
